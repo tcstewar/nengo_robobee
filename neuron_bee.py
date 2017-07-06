@@ -96,6 +96,8 @@ class GatherDataTrial(pytry.NengoTrial):
         self.param('oracle learning', oracle=False)
         self.param('intercept minimum', low_intercept=-1.0)
         self.param('learning_rate', learning_rate=1e-4)
+
+        self.param('Ki', Ki=0.0)
         
 
     def model(self, p):
@@ -133,6 +135,14 @@ class GatherDataTrial(pytry.NengoTrial):
 
             u_unfilt = nengo.Node(None, size_in=4)
             u = nengo.Node(None, size_in=4)
+
+            if p.Ki > 0:
+                dz_error = nengo.Ensemble(n_neurons=100, dimensions=1, neuron_type=nengo.LIFRate())
+                nengo.Connection(bee.plant[bee.bee.idx_body_vel[-1]], dz_error, synapse=None)
+                nengo.Connection(dz_error, dz_error, synapse=0.1)
+                nengo.Connection(dz_error, u[0], transform=p.Ki, synapse=None)
+
+
 
 
             nengo.Connection(bee.plant[keep_x], ens[:len(keep_x)], synapse=None, transform=1.0/ctrl['std_x'][keep_x])

@@ -87,11 +87,16 @@ class GatherDataTrial(pytry.NengoTrial):
         self.param('angle', angle=0.0)
         self.param('initial pose variability', pose_var=0.0)
         self.param('initial rotation rate variability', dpose_var=0.0)
-        self.param('controller filename', ctrl_filename='gather1-hover.npz')
+        self.param('controller filename', ctrl_filename='gather6-hover.npz')
         self.param('time', T=1.0)
         self.param('number of neurons', n_neurons=500)
         self.param('regularization', reg=0.1)
         self.param('use PIF control', use_pif=False)
+        self.param('radius scaling', radius_scaling=1.0)
+        self.param('oracle learning', oracle=False)
+        self.param('intercept minimum', low_intercept=-1.0)
+        self.param('learning_rate', learning_rate=1e-4)
+        
 
     def model(self, p):
 
@@ -111,7 +116,7 @@ class GatherDataTrial(pytry.NengoTrial):
             #keep_x = [8, 9, 10, 14, 15, 16, 17, 18, 19]
             #keep_x = [9, 15, 17]
             keep_x = [9, 10, 15, 16, 17]
-            keep_u = []
+            keep_u = []#1, 3]
 
             x_vals = ctrl['norm_x'][:,keep_x]
             u_vals = ctrl['norm_u'][:,keep_u]
@@ -123,7 +128,8 @@ class GatherDataTrial(pytry.NengoTrial):
 
             D = pts.shape[1]
             ens = nengo.Ensemble(n_neurons=p.n_neurons, dimensions=D,
-                                 neuron_type=nengo.LIFRate(), radius=np.sqrt(D))
+                                 intercepts=nengo.dists.Uniform(p.low_intercept, 1.0),
+                                 neuron_type=nengo.LIFRate(), radius=np.sqrt(D)*p.radius_scaling)
 
             u_unfilt = nengo.Node(None, size_in=4)
             u = nengo.Node(None, size_in=4)
@@ -137,9 +143,13 @@ class GatherDataTrial(pytry.NengoTrial):
             if len(keep_u) > 0:
                 nengo.Connection(nengo.Node(ctrl['mean_u'])[keep_u], ens[len(keep_x):], transform=-1, synapse=None)
 
+            if p.oracle:
+                learning_rule=nengo.PES(learning_rate=p.learning_rate)
+            else:
+                learning_rule=None
             self.conn = nengo.Connection(ens, u_unfilt, eval_points=pts, scale_eval_points=False, function=target,
-                             transform=1,
-                             synapse=None,
+                             synapse=0,
+                             learning_rule_type=learning_rule,
                              solver=nengo.solvers.LstsqL2(reg=p.reg))
 
             nengo.Connection(u_unfilt[0], u[0], synapse=None)
@@ -176,8 +186,52 @@ class GatherDataTrial(pytry.NengoTrial):
             nengo.Connection(control.control[3], plot_roll[0], synapse=None)
             nengo.Connection(u[3], plot_roll[1], synapse=None)
 
+            if p.oracle:
+                def error_func(t, x):
+                    if x[-1] > 0.5:
+                        return x[:-1] * 0
+                    else:
+                        return x[:-1]
+                error = nengo.Node(error_func, size_in=5)
+                nengo.Connection(control.control, error[:4], synapse=None, transform=-1)
+                nengo.Connection(u, error[:4], synapse=None)
+                nengo.Connection(error, self.conn.learning_rule, synapse=0)
 
+                stop_learning = nengo.Node(0)
+                nengo.Connection(stop_learning, error[-1], synapse=None)
 
+            
+            import nengo_learning_display
+
+                
+            S = 30
+            D = ens.dimensions
+            learn_plots = []
+            for i in range(D):
+                domain = np.zeros((S, D))
+                domain[:,i] = np.linspace(-2, 2, S)
+                
+                learn_plots.append(nengo_learning_display.Plot1D(self.conn, domain,
+                       range=(-1,1)))
+
+                if i < len(keep_x):
+                    learn_plots[i].label = 'x[%d]' % keep_x[i]
+                else:
+                    learn_plots[i].label = 'u[%d]' % keep_u[i-len(keep_x)]
+
+            domain = np.zeros((S, S, D))
+            grid = np.meshgrid(np.linspace(-1, 1, S), np.linspace(-1,1,S))
+            grid = np.array(grid).T
+            domain[:,:,[1,4]] = grid
+
+            learn_plots.append(nengo_learning_display.Plot2D(self.conn, domain,
+                                dimension=1, range=(-0.1,0.1)))
+            learn_plots[-1].label='x[%d] by x[%d]' % (keep_x[1], keep_x[4])
+
+            def on_step(sim):
+                for p in learn_plots:
+                    p.update(sim)
+            
 
         if p.gui:
             self.locals = locals()

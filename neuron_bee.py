@@ -18,6 +18,7 @@ class PIFControl(nengo.Network):
             return self.controller.get_control_dynamics(eta, t, y_star, x, u, bee)
         self.integrator_control = scipy.integrate.ode(control_ode_fun).set_integrator('dopri5')
         eta = np.zeros(7)
+        eta[:4] = self.controller.get_u_star([0,0,0,0])
         self.integrator_control.set_initial_value(eta, 0)
         
         with self:
@@ -68,13 +69,19 @@ class NengoBee(nengo.Network):
             self.attitude = nengo.Node(None, size_in=3)
             nengo.Connection(self.plant[8:11], self.attitude, synapse=None)
 
+            self.xyz_rate = nengo.Node(None, size_in=3)
+            nengo.Connection(self.plant[17:20], self.xyz_rate, synapse=None)
+
+            self.attitude_rate = nengo.Node(None, size_in=3)
+            nengo.Connection(self.plant[14:17], self.attitude_rate, synapse=None)
+
 
     def update(self, t, u):
         self.integrator_dynamics.set_f_params(u)
         x = self.integrator_dynamics.integrate(t)
         return x
 
-class GatherDataTrial(pytry.PlotTrial):
+class GatherDataTrial(pytry.NengoTrial):
     def params(self):
         self.param('velocity', velocity=0.0)
         self.param('angle', angle=0.0)
@@ -82,11 +89,11 @@ class GatherDataTrial(pytry.PlotTrial):
         self.param('initial rotation rate variability', dpose_var=0.0)
         self.param('controller filename', ctrl_filename='gather1-hover.npz')
         self.param('time', T=1.0)
-        self.param('dt', dt=0.001)
         self.param('number of neurons', n_neurons=500)
         self.param('regularization', reg=0.1)
+        self.param('use PIF control', use_pif=False)
 
-    def evaluate(self, p, plt):
+    def model(self, p):
 
         ctrl = np.load(p.ctrl_filename)
 
@@ -101,33 +108,50 @@ class GatherDataTrial(pytry.PlotTrial):
             
             control = PIFControl(bee.bee)
 
-            ens = nengo.Ensemble(n_neurons=p.n_neurons, dimensions=23,
-                                 neuron_type=nengo.LIFRate(), radius=np.sqrt(23))
+            #keep_x = [8, 9, 10, 14, 15, 16, 17, 18, 19]
+            #keep_x = [9, 15, 17]
+            keep_x = [9, 10, 15, 16, 17]
+            keep_u = []
 
-            
+            x_vals = ctrl['norm_x'][:,keep_x]
+            u_vals = ctrl['norm_u'][:,keep_u]
 
+            target = ctrl['all_u']
+
+            pts = np.hstack([x_vals, u_vals])
+
+
+            D = pts.shape[1]
+            ens = nengo.Ensemble(n_neurons=p.n_neurons, dimensions=D,
+                                 neuron_type=nengo.LIFRate(), radius=np.sqrt(D))
+
+            u_unfilt = nengo.Node(None, size_in=4)
             u = nengo.Node(None, size_in=4)
-            nengo.Connection(u, u, synapse=0)
-            nengo.Connection(u, bee.u, synapse=0)
 
 
+            nengo.Connection(bee.plant[keep_x], ens[:len(keep_x)], synapse=None, transform=1.0/ctrl['std_x'][keep_x])
+            if len(keep_u) > 0:
+                nengo.Connection(bee.u[keep_u], ens[len(keep_x):], synapse=None, transform=1.0/ctrl['std_u'][keep_u])
 
-            nengo.Connection(bee.plant, ens[:20], synapse=None, transform=1.0/ctrl['std_x'])
-            nengo.Connection(u[[0,1,3]], ens[20:], synapse=None, transform=1.0/ctrl['std_x'][[0,1,3]])
+            nengo.Connection(nengo.Node(ctrl['mean_x'])[keep_x], ens[:len(keep_x)], transform=-1, synapse=None)
+            if len(keep_u) > 0:
+                nengo.Connection(nengo.Node(ctrl['mean_u'])[keep_u], ens[len(keep_x):], transform=-1, synapse=None)
 
-            nengo.Connection(nengo.Node(ctrl['mean_x']), ens[:20], transform=-1, synapse=None)
-            nengo.Connection(nengo.Node(ctrl['mean_u'][[0,1,3]]), ens[20:], transform=-1, synapse=None)
-
-            conn = nengo.Connection(ens, u[[0,1,3]], eval_points=ctrl['pts'], scale_eval_points=False, function=ctrl['fn'],
-                             transform=ctrl['mean_du'][[0,1,3]]*0.001,
+            self.conn = nengo.Connection(ens, u_unfilt, eval_points=pts, scale_eval_points=False, function=target,
+                             transform=1,
+                             synapse=None,
                              solver=nengo.solvers.LstsqL2(reg=p.reg))
 
+            nengo.Connection(u_unfilt[0], u[0], synapse=None)
+            nengo.Connection(u_unfilt[1:], u[1:], synapse=None)
 
 
-
+            if p.use_pif:
+                nengo.Connection(control.control, bee.u, synapse=0)
+            else:
+                nengo.Connection(u, bee.u, synapse=0)
             
             nengo.Connection(bee.plant, control.x, synapse=None)
-            #nengo.Connection(control.control, bee.u, synapse=0)
             nengo.Connection(bee.u, control.u, synapse=None)
 
             v = nengo.Node(p.velocity)
@@ -135,55 +159,75 @@ class GatherDataTrial(pytry.PlotTrial):
             a = nengo.Node(p.angle)
             nengo.Connection(a, control.y_star[2], synapse=None)
 
-            probe_pif_u = nengo.Probe(control.control, synapse=None)
-            probe_x = nengo.Probe(control.x, synapse=None)
-            probe_u = nengo.Probe(bee.u, synapse=None)
-            
-        sim = nengo.Simulator(model, dt=p.dt)
+            self.probe_pif_u = nengo.Probe(control.control, synapse=None)
+            self.probe_x = nengo.Probe(control.x, synapse=None)
+            self.probe_u = nengo.Probe(u, synapse=None)
+
+
+            plot_thrust = nengo.Node(None, size_in=2)
+            nengo.Connection(control.control[0], plot_thrust[0], synapse=None)
+            nengo.Connection(u[0], plot_thrust[1], synapse=None)
+
+            plot_pitch = nengo.Node(None, size_in=2)
+            nengo.Connection(control.control[1], plot_pitch[0], synapse=None)
+            nengo.Connection(u[1], plot_pitch[1], synapse=None)
+
+            plot_roll = nengo.Node(None, size_in=2)
+            nengo.Connection(control.control[3], plot_roll[0], synapse=None)
+            nengo.Connection(u[3], plot_roll[1], synapse=None)
+
+
+
+
+        if p.gui:
+            self.locals = locals()
+        return model
+
+    def evaluate(self, p, sim, plt):
         with sim:
             sim.run(p.T)
 
         if plt:
             plt.subplot(4, 2, 1)
-            plt.plot(sim.trange(), sim.data[probe_x][:,11:14])
+            plt.plot(sim.trange(), sim.data[self.probe_x][:,11:14])
             plt.ylabel('position (m)')
             plt.legend(['x', 'y', 'z'], loc='best')
 
             plt.subplot(4, 2, 3)
-            plt.plot(sim.trange(), sim.data[probe_x][:,17:20])
+            plt.plot(sim.trange(), sim.data[self.probe_x][:,17:20])
             plt.ylabel('velocity (m)')
             plt.legend(['x', 'y', 'z'], loc='best')
 
             plt.subplot(4, 2, 5)
-            plt.plot(sim.trange(), sim.data[probe_x][:,8:11])
+            plt.plot(sim.trange(), sim.data[self.probe_x][:,8:11])
             plt.ylabel('attitude (radians)')
             plt.legend(['yaw $\phi$', 'roll $\\theta$', 'pitch $\psi$'], loc='best')
 
             plt.subplot(4, 2, 7)
-            plt.plot(sim.trange(), sim.data[probe_x][:,14:17])
+            plt.plot(sim.trange(), sim.data[self.probe_x][:,14:17])
             plt.ylabel('attitude rate (radians)')
             plt.legend(['yaw $\phi$', 'roll $\\theta$', 'pitch $\psi$'], loc='best')
 
             plt.subplot(4, 2, 2)
-            plt.plot(sim.trange(), sim.data[probe_u])
+            plt.plot(sim.trange(), sim.data[self.probe_u])
             plt.ylabel('u')
             plt.legend(['stroke ampl.', 'pitch torque', 'yaw torque', 'roll'], loc='best')
 
             plt.subplot(4, 2, 4)
-            plt.plot(sim.trange(), sim.data[probe_pif_u])
+            plt.plot(sim.trange(), sim.data[self.probe_pif_u])
             plt.ylabel('PIF u')
             plt.legend(['stroke ampl.', 'pitch torque', 'yaw torque', 'roll'], loc='best')
 
             plt.subplot(4, 2, 6)
-            plt.plot(sim.trange(), sim.data[probe_u] - sim.data[probe_pif_u])
+            plt.plot(sim.trange(), sim.data[self.probe_u] - sim.data[self.probe_pif_u])
             plt.ylabel('u error')
             plt.legend(['stroke ampl.', 'pitch torque', 'yaw torque', 'roll'], loc='best')
 
         return dict(
-            solver_error = sim.data[conn].solver_info['rmses'],
-            x=sim.data[probe_x],
-            u=sim.data[probe_u],
-            pif_u=sim.data[probe_pif_u])
+            solver_error = sim.data[self.conn].solver_info['rmses'],
+            x=sim.data[self.probe_x],
+            u=sim.data[self.probe_u],
+            pif_u=sim.data[self.probe_pif_u])
 
         
 

@@ -157,47 +157,53 @@ class GatherDataTrial(pytry.NengoTrial):
                 '''roll_error = nengo.Ensemble(n_neurons=100, dimensions=1, neuron_type=nengo.LIF())
                 nengo.Connection(bee.plant[bee.bee.idx_body_att[-2]], roll_error, synapse=None)
                 nengo.Connection(roll_error, roll_error, synapse=0.1)
-                nengo.Connection(roll_error, u[3], transform=-.05*p.Ki, synapse=None)'''
+                nengo.Connection(roll_error, u[3], transform=.05*p.Ki, synapse=.01)'''
 
                 '''dpitch_error = nengo.Ensemble(n_neurons=100, dimensions=1, neuron_type=nengo.LIF())
                 nengo.Connection(bee.plant[bee.bee.idx_body_att_rate[-1]], dpitch_error, synapse=None)
                 nengo.Connection(dpitch_error, dpitch_error, synapse=0.1)
-                nengo.Connection(dpitch_error, u[2], transform=-.3*p.Ki, synapse=None)'''
+                nengo.Connection(dpitch_error, u[2], transform=.3*p.Ki, synapse=.01)'''
                 
                 dx_error = nengo.Ensemble(n_neurons=100, dimensions=1, neuron_type=nengo.LIF())
                 nengo.Connection(source[0], dx_error, synapse=None)
                 nengo.Connection(dx_error, dx_error, synapse=0.1)
                 nengo.Connection(dx_error, u[1], transform=.01*p.Ki, synapse=.01)
 
-                '''roll_error = nengo.Ensemble(n_neurons=100, dimensions=1, neuron_type=nengo.LIF())
-                nengo.Connection(bee.plant[bee.bee.idx_body_att[-2]], roll_error, synapse=None)
-                nengo.Connection(roll_error, roll_error, synapse=0.1)
-                nengo.Connection(roll_error, u[3], transform=-.05*p.Ki, synapse=None)'''
+                '''yaw_error = nengo.Ensemble(n_neurons=100, dimensions=1, neuron_type=nengo.LIF())
+                nengo.Connection(bee.plant[bee.bee.idx_body_att[-2]], yaw_error, synapse=None)
+                nengo.Connection(yaw_error, yaw_error, synapse=0.1)
+                nengo.Connection(yaw_error, u[3], transform=.05*p.Ki, synapse=.01)'''
 
             if p.adapt:
                 if p.world_adapt:
                     source = bee.xyz_rate
                 else:
-                    source = bee.xyz_rate_body                
+                    source = bee.xyz_rate_body
+                def inhibit(t):
+                    return 2.0 if t < 1.0 else 0.0
+                learn_ctrl = nengo.Node(inhibit)
                 adapt = nengo.Ensemble(n_neurons=100, dimensions=1, neuron_type=nengo.LIF())
+                nengo.Connection(learn_ctrl, adapt.neurons, transform=[[-1]]*adapt.n_neurons)
+                
                 #learn the adaptation for dz to thrust
                 dz_learn = nengo.Connection(adapt, u[0], 
-                    learning_rule_type=nengo.PES(p.adapt_learn_rate), 
-                    transform = -1,
+                    learning_rule_type=nengo.PES(p.adapt_learn_rate),
+                    function=lambda x:0, 
                     synapse=.01)
-                nengo.Connection(source[2], dz_learn.learning_rule)
+                nengo.Connection(source[2], dz_learn.learning_rule, transform=-1)
                 #learn the adapatation for dx to pitch
                 dx_learn = nengo.Connection(adapt, u[1], 
-                    learning_rule_type=nengo.PES(.1*p.adapt_learn_rate), 
-                    transform = -1,
+                    learning_rule_type=nengo.PES(.5*p.adapt_learn_rate), 
+                    function=lambda x:0, 
                     synapse=.01)
-                nengo.Connection(source[0], dx_learn.learning_rule)
+                nengo.Connection(source[0], dx_learn.learning_rule, transform=-1)
                 #learn adaptation for dy to roll
-                dy_learn = nengo.Connection(adapt, u[3], 
+                '''dy_learn = nengo.Connection(adapt, u[3], 
                     learning_rule_type=nengo.PES(.1*p.adapt_learn_rate), 
-                    transform = -1,
+                    function=lambda x:0, 
                     synapse=.01)
-                nengo.Connection(source[1], dy_learn.learning_rule)                
+                nengo.Connection(source[1], dy_learn.learning_rule, transform=1)'''
+                nengo.Connection(bee.plant[bee.bee.idx_body_att[1]], adapt, synapse=None)               
 
             nengo.Connection(bee.plant[keep_x], ens[:len(keep_x)], synapse=None, transform=1.0/ctrl['std_x'][keep_x])
             if len(keep_u) > 0:

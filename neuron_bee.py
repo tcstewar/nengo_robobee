@@ -131,19 +131,36 @@ class GatherDataTrial(pytry.NengoTrial):
             D = pts.shape[1]
             ens = nengo.Ensemble(n_neurons=p.n_neurons, dimensions=D,
                                  intercepts=nengo.dists.Uniform(p.low_intercept, 1.0),
-                                 neuron_type=nengo.LIFRate(), radius=np.sqrt(D)*p.radius_scaling)
+                                 neuron_type=nengo.LIF(), radius=np.sqrt(D)*p.radius_scaling)
 
             u_unfilt = nengo.Node(None, size_in=4)
             u = nengo.Node(None, size_in=4)
 
             if p.Ki > 0:
-                dz_error = nengo.Ensemble(n_neurons=100, dimensions=1, neuron_type=nengo.LIFRate())
+                dz_error = nengo.Ensemble(n_neurons=100, dimensions=1, neuron_type=nengo.LIF())
                 nengo.Connection(bee.plant[bee.bee.idx_body_vel[-1]], dz_error, synapse=None)
                 nengo.Connection(dz_error, dz_error, synapse=0.1)
-                nengo.Connection(dz_error, u[0], transform=p.Ki, synapse=None)
+                nengo.Connection(dz_error, u[0], transform=p.Ki, synapse=.01)
+                
+                '''roll_error = nengo.Ensemble(n_neurons=100, dimensions=1, neuron_type=nengo.LIF())
+                nengo.Connection(bee.plant[bee.bee.idx_body_att[-2]], roll_error, synapse=None)
+                nengo.Connection(roll_error, roll_error, synapse=0.1)
+                nengo.Connection(roll_error, u[3], transform=-.05*p.Ki, synapse=None)'''
 
+                '''dpitch_error = nengo.Ensemble(n_neurons=100, dimensions=1, neuron_type=nengo.LIF())
+                nengo.Connection(bee.plant[bee.bee.idx_body_att_rate[-1]], dpitch_error, synapse=None)
+                nengo.Connection(dpitch_error, dpitch_error, synapse=0.1)
+                nengo.Connection(dpitch_error, u[2], transform=-.3*p.Ki, synapse=None)'''
+                
+                dx_error = nengo.Ensemble(n_neurons=100, dimensions=1, neuron_type=nengo.LIF())
+                nengo.Connection(bee.plant[bee.bee.idx_body_vel[0]], dx_error, synapse=None)
+                nengo.Connection(dx_error, dx_error, synapse=0.1)
+                nengo.Connection(dx_error, u[1], transform=.01*p.Ki, synapse=.01)
 
-
+                '''roll_error = nengo.Ensemble(n_neurons=100, dimensions=1, neuron_type=nengo.LIF())
+                nengo.Connection(bee.plant[bee.bee.idx_body_att[-2]], roll_error, synapse=None)
+                nengo.Connection(roll_error, roll_error, synapse=0.1)
+                nengo.Connection(roll_error, u[3], transform=-.05*p.Ki, synapse=None)'''
 
             nengo.Connection(bee.plant[keep_x], ens[:len(keep_x)], synapse=None, transform=1.0/ctrl['std_x'][keep_x])
             if len(keep_u) > 0:
@@ -158,7 +175,7 @@ class GatherDataTrial(pytry.NengoTrial):
             else:
                 learning_rule=None
             self.conn = nengo.Connection(ens, u_unfilt, eval_points=pts, scale_eval_points=False, function=target,
-                             synapse=0,
+                             synapse=0.01,
                              learning_rule_type=learning_rule,
                              solver=nengo.solvers.LstsqL2(reg=p.reg))
 
@@ -250,6 +267,8 @@ class GatherDataTrial(pytry.NengoTrial):
     def evaluate(self, p, sim, plt):
         with sim:
             sim.run(p.T)
+
+        mean_z = sim.data[self.probe_x][:,20]
 
         if plt:
             plt.subplot(4, 2, 1)

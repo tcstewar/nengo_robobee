@@ -76,6 +76,14 @@ class NengoBee(nengo.Network):
             nengo.Connection(self.plant[14:17], self.attitude_rate, synapse=None)
 
 
+            def rotate(t, x):
+                body_x = self.bee.world_state_to_body(x)
+                return body_x[17:20]
+
+            self.xyz_rate_body = nengo.Node(rotate, size_in=20)
+            nengo.Connection(self.plant, self.xyz_rate_body, synapse=None)
+
+
     def update(self, t, u):
         self.integrator_dynamics.set_f_params(u)
         x = self.integrator_dynamics.integrate(t)
@@ -97,6 +105,7 @@ class GatherDataTrial(pytry.NengoTrial):
         self.param('intercept minimum', low_intercept=-1.0)
         self.param('learning_rate', learning_rate=1e-4)
         self.param('Ki', Ki=0.0)
+        self.param('use world frame for adaptation', world_adapt=False)
         
 
     def model(self, p):
@@ -134,8 +143,12 @@ class GatherDataTrial(pytry.NengoTrial):
             u = nengo.Node(None, size_in=4)
 
             if p.Ki > 0:
+                if p.world_adapt:
+                    source = bee.xyz_rate
+                else:
+                    source = bee.xyz_rate_body
                 dz_error = nengo.Ensemble(n_neurons=100, dimensions=1, neuron_type=nengo.LIF())
-                nengo.Connection(bee.plant[bee.bee.idx_body_vel[-1]], dz_error, synapse=None)
+                nengo.Connection(source[2], dz_error, synapse=None)
                 nengo.Connection(dz_error, dz_error, synapse=0.1)
                 nengo.Connection(dz_error, u[0], transform=p.Ki, synapse=.01)
                 
@@ -150,7 +163,7 @@ class GatherDataTrial(pytry.NengoTrial):
                 nengo.Connection(dpitch_error, u[2], transform=-.3*p.Ki, synapse=None)'''
                 
                 dx_error = nengo.Ensemble(n_neurons=100, dimensions=1, neuron_type=nengo.LIF())
-                nengo.Connection(bee.plant[bee.bee.idx_body_vel[0]], dx_error, synapse=None)
+                nengo.Connection(source[0], dx_error, synapse=None)
                 nengo.Connection(dx_error, dx_error, synapse=0.1)
                 nengo.Connection(dx_error, u[1], transform=.01*p.Ki, synapse=.01)
 
@@ -264,8 +277,6 @@ class GatherDataTrial(pytry.NengoTrial):
     def evaluate(self, p, sim, plt):
         with sim:
             sim.run(p.T)
-
-        mean_z = sim.data[self.probe_x][:,20]
 
         if plt:
             plt.subplot(4, 2, 1)

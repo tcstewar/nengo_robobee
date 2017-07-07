@@ -96,7 +96,6 @@ class GatherDataTrial(pytry.NengoTrial):
         self.param('oracle learning', oracle=False)
         self.param('intercept minimum', low_intercept=-1.0)
         self.param('learning_rate', learning_rate=1e-4)
-
         self.param('Ki', Ki=0.0)
         
 
@@ -106,8 +105,6 @@ class GatherDataTrial(pytry.NengoTrial):
 
         model = nengo.Network()
         with model:
-
-
             pose_offset = np.random.uniform(-p.pose_var, p.pose_var, size=3)
             dpose_offset = np.random.uniform(-p.dpose_var, p.dpose_var, size=3)
 
@@ -166,9 +163,9 @@ class GatherDataTrial(pytry.NengoTrial):
             if len(keep_u) > 0:
                 nengo.Connection(bee.u[keep_u], ens[len(keep_x):], synapse=None, transform=1.0/ctrl['std_u'][keep_u])
 
-            nengo.Connection(nengo.Node(ctrl['mean_x'])[keep_x], ens[:len(keep_x)], transform=-1, synapse=None)
+            nengo.Connection(nengo.Node(ctrl['mean_x']/ctrl['std_x'])[keep_x], ens[:len(keep_x)], transform=-1, synapse=None)
             if len(keep_u) > 0:
-                nengo.Connection(nengo.Node(ctrl['mean_u'])[keep_u], ens[len(keep_x):], transform=-1, synapse=None)
+                nengo.Connection(nengo.Node(ctrl['mean_u']/ctrl['std_u'])[keep_u], ens[len(keep_x):], transform=-1, synapse=None)
 
             if p.oracle:
                 learning_rule=nengo.PES(learning_rate=p.learning_rate)

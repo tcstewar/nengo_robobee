@@ -106,6 +106,8 @@ class GatherDataTrial(pytry.NengoTrial):
         self.param('learning_rate', learning_rate=1e-4)
         self.param('Ki', Ki=0.0)
         self.param('use world frame for adaptation', world_adapt=False)
+        self.param('use learning adaptation', adapt=True)
+        self.param('learning adaptation rate', adapt_learn_rate=1e-4)
         
 
     def model(self, p):
@@ -171,6 +173,31 @@ class GatherDataTrial(pytry.NengoTrial):
                 nengo.Connection(bee.plant[bee.bee.idx_body_att[-2]], roll_error, synapse=None)
                 nengo.Connection(roll_error, roll_error, synapse=0.1)
                 nengo.Connection(roll_error, u[3], transform=-.05*p.Ki, synapse=None)'''
+
+            if p.adapt:
+                if p.world_adapt:
+                    source = bee.xyz_rate
+                else:
+                    source = bee.xyz_rate_body                
+                adapt = nengo.Ensemble(n_neurons=100, dimensions=1, neuron_type=nengo.LIF())
+                #learn the adaptation for dz to thrust
+                dz_learn = nengo.Connection(adapt, u[0], 
+                    learning_rule_type=nengo.PES(p.adapt_learn_rate), 
+                    transform = -1,
+                    synapse=.01)
+                nengo.Connection(source[2], dz_learn.learning_rule)
+                #learn the adapatation for dx to pitch
+                dx_learn = nengo.Connection(adapt, u[1], 
+                    learning_rule_type=nengo.PES(.1*p.adapt_learn_rate), 
+                    transform = -1,
+                    synapse=.01)
+                nengo.Connection(source[0], dx_learn.learning_rule)
+                #learn adaptation for dy to roll
+                dy_learn = nengo.Connection(adapt, u[3], 
+                    learning_rule_type=nengo.PES(.1*p.adapt_learn_rate), 
+                    transform = -1,
+                    synapse=.01)
+                nengo.Connection(source[1], dy_learn.learning_rule)                
 
             nengo.Connection(bee.plant[keep_x], ens[:len(keep_x)], synapse=None, transform=1.0/ctrl['std_x'][keep_x])
             if len(keep_u) > 0:

@@ -130,7 +130,7 @@ class GatherDataTrial(pytry.NengoTrial):
                 #     synapse=.01)
                 # nengo.Connection(source_body_vel[2], dz_learn.learning_rule, transform=-1)
                 #learn the adapatation for dx to pitch
-                vel_learn = nengo.Connection(adapt_vel, u[1], learning_rule_type=nengo.PES(2*p.adapt_learn_rate),
+                vel_learn = nengo.Connection(adapt_vel, u[1], learning_rule_type=nengo.PES(0.5*p.adapt_learn_rate),
                                             function=lambda x:0,
                                             synapse=.05)
                 nengo.Connection(bee.attitude[2], adapt_vel, synapse=None)

@@ -1,5 +1,5 @@
 import sys
-# sys.path.append('.')
+sys.path.append('.')
 sys.path.append(r'C:\Users\taylo\OneDrive\Cornell\LISC\Code\RoboBee\PyBee3D_Basic')
 import pytry
 import numpy as np
@@ -17,7 +17,7 @@ class GatherDataTrial(pytry.NengoTrial):
         self.param('angle', angle=0.0)
         self.param('initial pose variability', pose_var=0.0)
         self.param('initial rotation rate variability', dpose_var=0.0)
-        self.param('controller filename', ctrl_filename='gather6-hover.npz')
+        self.param('controller filename', ctrl_filename='gather7-hover.npz')
         self.param('time', T=1.0)
         self.param('number of neurons', n_neurons=500)
         self.param('regularization', reg=0.1)
@@ -30,6 +30,7 @@ class GatherDataTrial(pytry.NengoTrial):
         self.param('use world frame for adaptation', world_adapt=False)
         self.param('use learning adaptation', adapt=True)
         self.param('learning adaptation rate', adapt_learn_rate=1e-4)
+        self.param('use learning display', use_learning_display=True)
         
 
     def model(self, p):
@@ -50,7 +51,9 @@ class GatherDataTrial(pytry.NengoTrial):
             keep_x = [9, 10, 15, 16, 17]
             keep_u = []#1, 3]
 
-            x_vals = ctrl['norm_x'][:,keep_x]
+            # x_vals = ctrl['norm_x'][:,keep_x]
+            # Use the body frame velocities
+            x_vals = ctrl['norm_x_body'][:,keep_x]
             u_vals = ctrl['norm_u'][:,keep_u]
 
             target = ctrl['all_u']
@@ -127,11 +130,11 @@ class GatherDataTrial(pytry.NengoTrial):
                 nengo.Connection(source[1], dy_learn.learning_rule, transform=1)'''
                 nengo.Connection(bee.plant[bee.bee.idx_body_att[1]], adapt, synapse=None)               
 
-            nengo.Connection(bee.plant[keep_x], ens[:len(keep_x)], synapse=None, transform=1.0/ctrl['std_x'][keep_x])
+            nengo.Connection(bee.plant[keep_x], ens[:len(keep_x)], synapse=None, transform=1.0/ctrl['std_x_body'][keep_x])
             if len(keep_u) > 0:
                 nengo.Connection(bee.u[keep_u], ens[len(keep_x):], synapse=None, transform=1.0/ctrl['std_u'][keep_u])
 
-            nengo.Connection(nengo.Node(ctrl['mean_x']/ctrl['std_x'])[keep_x], ens[:len(keep_x)], transform=-1, synapse=None)
+            nengo.Connection(nengo.Node(ctrl['mean_x_body']/ctrl['std_x_body'])[keep_x], ens[:len(keep_x)], transform=-1, synapse=None)
             if len(keep_u) > 0:
                 nengo.Connection(nengo.Node(ctrl['mean_u']/ctrl['std_u'])[keep_u], ens[len(keep_x):], transform=-1, synapse=None)
 
@@ -192,37 +195,37 @@ class GatherDataTrial(pytry.NengoTrial):
                 stop_learning = nengo.Node(0)
                 nengo.Connection(stop_learning, error[-1], synapse=None)
 
-            
-            import nengo_learning_display
+            if p.use_learning_display:
+                import nengo_learning_display
 
-                
-            S = 30
-            D = ens.dimensions
-            learn_plots = []
-            for i in range(D):
-                domain = np.zeros((S, D))
-                domain[:,i] = np.linspace(-2, 2, S)
-                
-                learn_plots.append(nengo_learning_display.Plot1D(self.conn, domain,
-                       range=(-1,1)))
 
-                if i < len(keep_x):
-                    learn_plots[i].label = 'x[%d]' % keep_x[i]
-                else:
-                    learn_plots[i].label = 'u[%d]' % keep_u[i-len(keep_x)]
+                S = 30
+                D = ens.dimensions
+                learn_plots = []
+                for i in range(D):
+                    domain = np.zeros((S, D))
+                    domain[:,i] = np.linspace(-2, 2, S)
 
-            domain = np.zeros((S, S, D))
-            grid = np.meshgrid(np.linspace(-1, 1, S), np.linspace(-1,1,S))
-            grid = np.array(grid).T
-            domain[:,:,[1,4]] = grid
+                    learn_plots.append(nengo_learning_display.Plot1D(self.conn, domain,
+                           range=(-1,1)))
 
-            learn_plots.append(nengo_learning_display.Plot2D(self.conn, domain,
-                                dimension=1, range=(-0.1,0.1)))
-            learn_plots[-1].label='x[%d] by x[%d]' % (keep_x[1], keep_x[4])
+                    if i < len(keep_x):
+                        learn_plots[i].label = 'x[%d]' % keep_x[i]
+                    else:
+                        learn_plots[i].label = 'u[%d]' % keep_u[i-len(keep_x)]
 
-            def on_step(sim):
-                for p in learn_plots:
-                    p.update(sim)
+                domain = np.zeros((S, S, D))
+                grid = np.meshgrid(np.linspace(-1, 1, S), np.linspace(-1,1,S))
+                grid = np.array(grid).T
+                domain[:,:,[1,4]] = grid
+
+                learn_plots.append(nengo_learning_display.Plot2D(self.conn, domain,
+                                    dimension=1, range=(-0.1,0.1)))
+                learn_plots[-1].label='x[%d] by x[%d]' % (keep_x[1], keep_x[4])
+
+                def on_step(sim):
+                    for p in learn_plots:
+                        p.update(sim)
             
 
         if p.gui:

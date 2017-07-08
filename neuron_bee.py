@@ -31,6 +31,7 @@ class GatherDataTrial(pytry.NengoTrial):
         self.param('use learning adaptation', adapt=True)
         self.param('learning adaptation rate', adapt_learn_rate=1e-4)
         self.param('use learning display', use_learning_display=True)
+        self.param('apply wing bias', wing_bias=True)
         
 
     def model(self, p):
@@ -42,7 +43,8 @@ class GatherDataTrial(pytry.NengoTrial):
             pose_offset = np.random.uniform(-p.pose_var, p.pose_var, size=3)
             dpose_offset = np.random.uniform(-p.dpose_var, p.dpose_var, size=3)
 
-            bee = NengoBee(pose_offset=pose_offset, dpose_offset=dpose_offset)
+            bee = NengoBee(pose_offset=pose_offset, dpose_offset=dpose_offset,
+                           random_wing_bias=p.wing_bias)
             
             control = PIFControl(bee.bee)
 

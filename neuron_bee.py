@@ -1,6 +1,6 @@
 import sys
 sys.path.append('.')
-sys.path.append(r'C:\Users\taylo\OneDrive\Cornell\LISC\Code\RoboBee\PyBee3D_Basic')
+sys.path.append('../PyBee3D_Basic')
 import pytry
 import numpy as np
 import robobee
@@ -32,6 +32,10 @@ class GatherDataTrial(pytry.NengoTrial):
         self.param('learning adaptation rate', adapt_learn_rate=1e-4)
         self.param('use learning display', use_learning_display=True)
         self.param('apply wing bias', wing_bias=True)
+        self.param('adapt Kp scale', adapt_Kp=1.0)
+        self.param('adapt Kd scale', adapt_Kd=100.0)
+        self.param('adapt Ki scale', adapt_Ki=1.0)
+
         
 
     def model(self, p):
@@ -44,7 +48,7 @@ class GatherDataTrial(pytry.NengoTrial):
             dpose_offset = np.random.uniform(-p.dpose_var, p.dpose_var, size=3)
 
             bee = NengoBee(pose_offset=pose_offset, dpose_offset=dpose_offset,
-                           random_wing_bias=p.wing_bias)
+                           )#random_wing_bias=p.wing_bias)
             
             control = PIFControl(bee.bee)
 
@@ -130,17 +134,27 @@ class GatherDataTrial(pytry.NengoTrial):
                 #     synapse=.01)
                 # nengo.Connection(source_body_vel[2], dz_learn.learning_rule, transform=-1)
                 #learn the adapatation for dx to pitch
-                vel_learn = nengo.Connection(adapt_vel, u[1], learning_rule_type=nengo.PES(0.5*p.adapt_learn_rate),
+                vel_learn_u = nengo.Node(None, size_in=1)
+                vel_learn = nengo.Connection(adapt_vel, vel_learn_u, learning_rule_type=nengo.PES(p.adapt_learn_rate, pre_tau=0.01),
                                             function=lambda x:0,
-                                            synapse=.05)
+                                            synapse=.01)
                 nengo.Connection(bee.attitude[2], adapt_vel, synapse=None)
+
+                nengo.Connection(vel_learn_u, u[1], synapse=None)
+                #nengo.Connection(vel_learn_u, vel_learn.learning_rule, transform=0.5, synapse=0)
                 # att_learn = nengo.Connection(adapt_att, u[[1, 3]], learning_rule_type=nengo.PES(.5*p.adapt_learn_rate),
                 #                             function=lambda x:[0,0],
                 #                             transform=[-1]*2,
                 #                             synapse=.01)
                 # nengo.Connection(source_body_vel, learn_vel_switch)
                 # nengo.Connection(learn_vel_switch, adapt_vel.neurons, transform=[[-1, -1, -1]]*adapt_vel.n_neurons)
-                nengo.Connection(source_body_vel[0], vel_learn.learning_rule, transform=-1, synapse=None)
+                if p.adapt_Kp > 0:
+                    nengo.Connection(source_body_vel[0], vel_learn.learning_rule, transform=-1*p.adapt_Kp, synapse=None)
+                if p.adapt_Kd > 0:
+                    nengo.Connection(source_body_vel[0], vel_learn.learning_rule, transform=-1*p.adapt_Kd, synapse=None)
+                    nengo.Connection(source_body_vel[0], vel_learn.learning_rule, transform=1*p.adapt_Kd, synapse=0.005)
+                if p.adapt_Ki > 0:
+                    nengo.Connection(bee.xyz[0], vel_learn.learning_rule, transform=1*p.adapt_Ki, synapse=None)
                 #learn adaptation for dy to roll
                 '''dy_learn = nengo.Connection(adapt_vel, u[3], 
                     learning_rule_type=nengo.PES(.1*p.adapt_learn_rate), 
@@ -148,6 +162,9 @@ class GatherDataTrial(pytry.NengoTrial):
                     synapse=.01)
                 nengo.Connection(source_body_vel[1], dy_learn.learning_rule, transform=1)'''
                 # nengo.Connection(bee.plant[bee.bee.idx_body_att[1]], adapt_vel, synapse=None)
+
+                inhibit_adapt = nengo.Node(0)
+                nengo.Connection(inhibit_adapt, adapt_vel.neurons, transform=-10*np.ones((adapt_vel.n_neurons, 1)))
 
             nengo.Connection(bee.plant[keep_x], ens[:len(keep_x)], synapse=None, transform=1.0/ctrl['std_x_body'][keep_x])
             if len(keep_u) > 0:

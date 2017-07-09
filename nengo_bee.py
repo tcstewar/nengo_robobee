@@ -6,10 +6,11 @@ import scipy
 import nengo
 
 class NengoBee(nengo.Network):
-    def __init__(self, label=None, pose_offset=(0, 0, 0), dpose_offset=(0, 0, 0)):
+    def __init__(self, label=None, pose_offset=(0, 0, 0), dpose_offset=(0, 0, 0),
+                 random_wing_bias=True):
         super(NengoBee, self).__init__(label=label)
 
-        self.bee = robobee.RoboBee()
+        self.bee = robobee.RoboBee(random_wing_bias=random_wing_bias)
 
         traj_data = scipy.io.loadmat('Hover_Data.mat')
         x = traj_data['x'][0]

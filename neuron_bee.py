@@ -35,6 +35,9 @@ class GatherDataTrial(pytry.NengoTrial):
         self.param('adapt Kp scale', adapt_Kp=0.0)
         self.param('adapt Kd scale', adapt_Kd=100.0)
         self.param('adapt Ki scale', adapt_Ki=0.0)
+        self.param('parametric disturbance learning', pdl=False)
+        self.param('pdl derivative tau', pdl_tau=0.01)
+        self.param('pdl learning rate', pdl_learning_rate=1e-5)
 
         
 
@@ -48,7 +51,7 @@ class GatherDataTrial(pytry.NengoTrial):
             dpose_offset = np.random.uniform(-p.dpose_var, p.dpose_var, size=3)
 
             bee = NengoBee(pose_offset=pose_offset, dpose_offset=dpose_offset,
-                           )#random_wing_bias=p.wing_bias)
+                           random_wing_bias=p.wing_bias)
             
             control = PIFControl(bee.bee)
 
@@ -80,10 +83,10 @@ class GatherDataTrial(pytry.NengoTrial):
                     source_body_vel = bee.xyz_rate
                 else:
                     source_body_vel = bee.xyz_rate_body
-                dz_error = nengo.Ensemble(n_neurons=100, dimensions=1, neuron_type=nengo.LIF())
-                nengo.Connection(source_body_vel[2], dz_error, synapse=None)
-                nengo.Connection(dz_error, dz_error, synapse=0.1)
-                nengo.Connection(dz_error, u[0], transform=p.Ki, synapse=.01)
+                #dz_error = nengo.Ensemble(n_neurons=100, dimensions=1, neuron_type=nengo.LIF())
+                #nengo.Connection(source_body_vel[2], dz_error, synapse=None)
+                #nengo.Connection(dz_error, dz_error, synapse=0.1)
+                #nengo.Connection(dz_error, u[0], transform=p.Ki, synapse=.01)
                 
                 '''roll_error = nengo.Ensemble(n_neurons=100, dimensions=1, neuron_type=nengo.LIF())
                 nengo.Connection(bee.plant[bee.bee.idx_body_att[-2]], roll_error, synapse=None)
@@ -98,7 +101,7 @@ class GatherDataTrial(pytry.NengoTrial):
                 dx_error = nengo.Ensemble(n_neurons=100, dimensions=1, neuron_type=nengo.LIF())
                 nengo.Connection(source_body_vel[0], dx_error, synapse=None)
                 nengo.Connection(dx_error, dx_error, synapse=0.1)
-                nengo.Connection(dx_error, u[1], transform=.01*p.Ki, synapse=.01)
+                nengo.Connection(dx_error, bee.u[1], transform=.01*p.Ki, synapse=.01)
 
                 '''yaw_error = nengo.Ensemble(n_neurons=100, dimensions=1, neuron_type=nengo.LIF())
                 nengo.Connection(bee.plant[bee.bee.idx_body_att[-2]], yaw_error, synapse=None)
@@ -165,6 +168,55 @@ class GatherDataTrial(pytry.NengoTrial):
 
                 inhibit_adapt = nengo.Node(0)
                 nengo.Connection(inhibit_adapt, adapt_vel.neurons, transform=-10*np.ones((adapt_vel.n_neurons, 1)))
+
+            if p.pdl:
+                pdl_state = nengo.Ensemble(n_neurons=100, dimensions=1)
+                pdl_u = nengo.Node((lambda t, x: np.clip(x, -0.2, 0.2)), size_in=1)
+                pdl_conn = nengo.Connection(pdl_state, pdl_u,
+                                            function=lambda x: 0,
+                                            synapse=0.01,
+                                            learning_rule_type=nengo.PES(p.pdl_learning_rate),
+                                            )
+
+                tau = 0.01
+
+
+
+                ddpsi = nengo.Node(None, size_in=1)
+                f_dpsi = nengo.Node(None, size_in=1)
+                nengo.Connection(bee.attitude_rate[2], f_dpsi, synapse=tau)
+
+                nengo.Connection(f_dpsi, ddpsi, synapse=None, transform=1.0/p.pdl_tau)
+                nengo.Connection(f_dpsi, ddpsi, synapse=p.pdl_tau, transform=-1.0/p.pdl_tau)
+
+                error = nengo.Node(None, size_in=1)
+                nengo.Connection(pdl_u, error, synapse=tau)
+                nengo.Connection(ddpsi, error, transform=-1.0/0.1282, synapse=tau)
+                nengo.Connection(bee.attitude[2], error, synapse=tau, transform=-46.2811)
+                nengo.Connection(bee.attitude_rate[2], error, synapse=tau, transform=-19.6916)
+                nengo.Connection(bee.xyz_rate_body[0], error, synapse=tau, transform=915.22)
+
+                nengo.Connection(error, pdl_conn.learning_rule, synapse=None, transform=-1)
+
+                '''
+                ideal_ddpsi = nengo.Node(None, size_in=1)
+                nengo.Connection(bee.attitude[2], ideal_ddpsi, synapse=tau, transform=-46.2811)
+                nengo.Connection(bee.attitude_rate[2], ideal_ddpsi, synapse=tau, transform=-19.6916)
+                nengo.Connection(bee.xyz_rate_body[0], ideal_ddpsi, synapse=tau, transform=915.22)
+                if p.use_pif:
+                    nengo.Connection(control.control[1], ideal_ddpsi, synapse=tau, transform=0.1282)
+                else:
+                    nengo.Connection(u[1], ideal_ddpsi, synapse=tau, transform=0.1282)
+
+                both_ddpsi = nengo.Node(None, size_in=2)
+                nengo.Connection(ideal_ddpsi, both_ddpsi[0], synapse=None)
+                nengo.Connection(ddpsi, both_ddpsi[1], synapse=None)
+
+                nengo.Connection(ideal_ddpsi, pdl_conn.learning_rule, synapse=None, transform=-1)
+                nengo.Connection(ddpsi, pdl_conn.learning_rule, synapse=None, transform=1)
+                '''
+                #nengo.Connection(pdl_u, bee.u[1], synapse=None)
+
 
             nengo.Connection(bee.plant[keep_x], ens[:len(keep_x)], synapse=None, transform=1.0/ctrl['std_x_body'][keep_x])
             if len(keep_u) > 0:
@@ -234,31 +286,13 @@ class GatherDataTrial(pytry.NengoTrial):
             if p.use_learning_display:
                 import nengo_learning_display
 
-
-
-                S = 30
-                D = ens.dimensions
                 learn_plots = []
-                for i in range(D):
-                    domain = np.zeros((S, D))
-                    domain[:,i] = np.linspace(-2, 2, S)
 
-                    learn_plots.append(nengo_learning_display.Plot1D(self.conn, domain,
-                           range=(-1,1)))
+                if p.adapt:
 
-                    if i < len(keep_x):
-                        learn_plots[i].label = 'x[%d]' % keep_x[i]
-                    else:
-                        learn_plots[i].label = 'u[%d]' % keep_u[i-len(keep_x)]
-
-                domain = np.zeros((S, S, D))
-                grid = np.meshgrid(np.linspace(-1, 1, S), np.linspace(-1,1,S))
-                grid = np.array(grid).T
-                domain[:,:,[1,4]] = grid
-
-                vel_plot = nengo_learning_display.Plot1D(vel_learn, np.linspace(-1,1,30), range=(-1,1))
-                vel_plot.label = 'adapting for velocity'
-                learn_plots.append(vel_plot)
+                    vel_plot = nengo_learning_display.Plot1D(vel_learn, np.linspace(-1,1,30), range=(-1,1))
+                    vel_plot.label = 'adapting for velocity'
+                    learn_plots.append(vel_plot)
 
                 def on_step(sim):
                     for p in learn_plots:

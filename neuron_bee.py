@@ -32,9 +32,9 @@ class GatherDataTrial(pytry.NengoTrial):
         self.param('learning adaptation rate', adapt_learn_rate=1e-4)
         self.param('use learning display', use_learning_display=True)
         self.param('apply wing bias', wing_bias=True)
-        self.param('adapt Kp scale', adapt_Kp=1.0)
+        self.param('adapt Kp scale', adapt_Kp=0.0)
         self.param('adapt Kd scale', adapt_Kd=100.0)
-        self.param('adapt Ki scale', adapt_Ki=1.0)
+        self.param('adapt Ki scale', adapt_Ki=0.0)
 
         
 

@@ -127,8 +127,7 @@ class GatherDataTrial(pytry.NengoTrial):
 
             nengo.Connection(u, bee.u, synapse=0)
             
-            self.probe_u = nengo.Probe(u, synapse=None)
-            self.probe_x = nengo.Probe(bee.plant, synapse=None)
+            self.probe_x = nengo.Probe(bee.plant, synapse=0.02)
 
         if p.gui:
             self.locals = locals()
@@ -145,7 +144,7 @@ class GatherDataTrial(pytry.NengoTrial):
 
         max_xyz = np.max(np.abs(xyz),axis=0)
         xyz_rate_norm = np.linalg.norm(xyz_rate, axis=1)
-        thresholds = [.07,.1,.2]
+        thresholds = [.05,0.07,.1]
         thresh_times = []
         for thresh in thresholds:
             if np.all(xyz_rate_norm<thresh):
@@ -156,7 +155,7 @@ class GatherDataTrial(pytry.NengoTrial):
 
 
         att_rate_norm = np.linalg.norm(att_rate, axis=1)
-        att_thresholds = [20,30,40]
+        att_thresholds = [2.5, 5, 10]
         att_thresh_times = []
         for thresh in att_thresholds:
             if np.all(att_rate_norm<thresh):
@@ -190,8 +189,12 @@ class GatherDataTrial(pytry.NengoTrial):
             plt.legend(['yaw $\phi$', 'roll $\\theta$', 'pitch $\psi$'], loc='best')
 
         return dict(
-            x=sim.data[self.probe_x],
-            u=sim.data[self.probe_u])
+            max_xyz=max_xyz,
+            thresh_times=thresh_times,
+            att_thresh_times=att_thresh_times,
+            thresholds=thresholds,
+            att_thresholds=att_thresholds,
+           )
 
         
 

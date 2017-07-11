@@ -81,8 +81,16 @@ class GatherDataTrial(pytry.NengoTrial):
             vel_learnz = nengo.Connection(adapt_velz, vel_learnz_u, learning_rule_type=nengo.PES(p.adapt_learn_rate, pre_tau=0.01),
                                         function=lambda x:0,
                                         synapse=.01)
-
             nengo.Connection(vel_learnz_u, u[0], synapse=None)
+
+            adapt_vely = nengo.Ensemble(n_neurons=100, dimensions=1, neuron_type=nengo.LIF())
+
+            vel_learny_u = nengo.Node(None, size_in=1)
+            vel_learny = nengo.Connection(adapt_vely, vel_learny_u, learning_rule_type=nengo.PES(p.adapt_learn_rate, pre_tau=0.01),
+                                        function=lambda x:0,
+                                        synapse=.01)
+            nengo.Connection(vel_learny_u, u[3], synapse=None)
+            nengo.Connection(bee.attitude[1], adapt_vely, synapse=None)
 
             if p.adapt_Kp > 0:
                 nengo.Connection(source_body_vel[0], vel_learnx.learning_rule, transform=-1*p.adapt_Kp, synapse=None)
@@ -96,6 +104,11 @@ class GatherDataTrial(pytry.NengoTrial):
             if p.adapt_Kd > 0:
                 nengo.Connection(source_body_vel[2], vel_learnz.learning_rule, transform=-1*p.adapt_Kd, synapse=None)
                 nengo.Connection(source_body_vel[2], vel_learnz.learning_rule, transform=1*p.adapt_Kd, synapse=0.005)
+            if p.adapt_Kp > 0:
+                nengo.Connection(source_body_vel[1], vel_learny.learning_rule, transform=.1*p.adapt_Kp, synapse=None)
+            if p.adapt_Kd > 0:
+                nengo.Connection(source_body_vel[1], vel_learny.learning_rule, transform=.03*p.adapt_Kd, synapse=None)
+                nengo.Connection(source_body_vel[1], vel_learny.learning_rule, transform=-.03*p.adapt_Kd, synapse=0.005)
 
             nengo.Connection(bee.plant[keep_x], ens[:len(keep_x)], synapse=None, transform=1.0/ctrl['std_x_body'][keep_x])
             if len(keep_u) > 0:
@@ -115,48 +128,7 @@ class GatherDataTrial(pytry.NengoTrial):
             nengo.Connection(u, bee.u, synapse=0)
             
             self.probe_u = nengo.Probe(u, synapse=None)
-
-
-            plot_thrust = nengo.Node(None, size_in=2)
-            nengo.Connection(u[0], plot_thrust[1], synapse=None)
-
-            plot_pitch = nengo.Node(None, size_in=2)
-            nengo.Connection(u[1], plot_pitch[1], synapse=None)
-
-            plot_roll = nengo.Node(None, size_in=2)
-            nengo.Connection(u[3], plot_roll[1], synapse=None)
-
-            if p.use_learning_display:
-                import nengo_learning_display
-
-                S = 30
-                D = ens.dimensions
-                learn_plots = []
-                for i in range(D):
-                    domain = np.zeros((S, D))
-                    domain[:,i] = np.linspace(-2, 2, S)
-
-                    learn_plots.append(nengo_learning_display.Plot1D(self.conn, domain,
-                           range=(-1,1)))
-
-                    if i < len(keep_x):
-                        learn_plots[i].label = 'x[%d]' % keep_x[i]
-                    else:
-                        learn_plots[i].label = 'u[%d]' % keep_u[i-len(keep_x)]
-
-                domain = np.zeros((S, S, D))
-                grid = np.meshgrid(np.linspace(-1, 1, S), np.linspace(-1,1,S))
-                grid = np.array(grid).T
-                domain[:,:,[1,4]] = grid
-
-                vel_plot = nengo_learning_display.Plot1D(vel_learnx, np.linspace(-1,1,30), range=(-1,1))
-                vel_plot.label = 'adapting for velocity'
-                learn_plots.append(vel_plot)
-
-                def on_step(sim):
-                    for p in learn_plots:
-                        p.update(sim)
-            
+            self.probe_x = nengo.Probe(bee.plant, synapse=None)
 
         if p.gui:
             self.locals = locals()
@@ -166,47 +138,60 @@ class GatherDataTrial(pytry.NengoTrial):
         with sim:
             sim.run(p.T)
 
+        t = sim.trange()
+        xyz = sim.data[self.probe_x][:,11:14]
+        xyz_rate = sim.data[self.probe_x][:,17:20]
+        att_rate = sim.data[self.probe_x][:,14:17]
+
+        max_xyz = np.max(np.abs(xyz),axis=0)
+        xyz_rate_norm = np.linalg.norm(xyz_rate, axis=1)
+        thresholds = [.07,.1,.2]
+        thresh_times = []
+        for thresh in thresholds:
+            if np.all(xyz_rate_norm<thresh):
+                thresh_times.append(0)
+            else:
+                ind = np.argmax(xyz_rate_norm[::-1]>thresh)
+                thresh_times.append(t[::-1][ind])
+
+
+        att_rate_norm = np.linalg.norm(att_rate, axis=1)
+        att_thresholds = [20,30,40]
+        att_thresh_times = []
+        for thresh in att_thresholds:
+            if np.all(att_rate_norm<thresh):
+                att_thresh_times.append(0)
+            else:
+                ind = np.argmax(att_rate_norm[::-1]>thresh)
+                att_thresh_times.append(t[::-1][ind])
+
         if plt:
-            plt.subplot(4, 2, 1)
-            plt.plot(sim.trange(), sim.data[self.probe_x][:,11:14])
+            plt.subplot(3, 1, 1)
+            plt.plot(t, xyz)
+            [plt.axhline(_x) for _x in max_xyz]            
+            [plt.axhline(-_x) for _x in max_xyz]            
             plt.ylabel('position (m)')
             plt.legend(['x', 'y', 'z'], loc='best')
 
-            plt.subplot(4, 2, 3)
-            plt.plot(sim.trange(), sim.data[self.probe_x][:,17:20])
+            plt.subplot(3, 1, 2)
+            plt.plot(t, xyz_rate)
+            plt.plot(t, xyz_rate_norm)
+            [plt.axvline(_x) for _x in thresh_times]            
+            [plt.axhline(_x) for _x in thresholds]            
             plt.ylabel('velocity (m)')
             plt.legend(['x', 'y', 'z'], loc='best')
 
-            plt.subplot(4, 2, 5)
-            plt.plot(sim.trange(), sim.data[self.probe_x][:,8:11])
-            plt.ylabel('attitude (radians)')
-            plt.legend(['yaw $\phi$', 'roll $\\theta$', 'pitch $\psi$'], loc='best')
-
-            plt.subplot(4, 2, 7)
-            plt.plot(sim.trange(), sim.data[self.probe_x][:,14:17])
+            plt.subplot(3, 1, 3)
+            plt.plot(t, att_rate)
+            plt.plot(t, att_rate_norm)
+            [plt.axvline(_x) for _x in att_thresh_times]            
+            [plt.axhline(_x) for _x in att_thresholds]            
             plt.ylabel('attitude rate (radians)')
             plt.legend(['yaw $\phi$', 'roll $\\theta$', 'pitch $\psi$'], loc='best')
 
-            plt.subplot(4, 2, 2)
-            plt.plot(sim.trange(), sim.data[self.probe_u])
-            plt.ylabel('u')
-            plt.legend(['stroke ampl.', 'pitch torque', 'yaw torque', 'roll'], loc='best')
-
-            plt.subplot(4, 2, 4)
-            plt.plot(sim.trange(), sim.data[self.probe_pif_u])
-            plt.ylabel('PIF u')
-            plt.legend(['stroke ampl.', 'pitch torque', 'yaw torque', 'roll'], loc='best')
-
-            plt.subplot(4, 2, 6)
-            plt.plot(sim.trange(), sim.data[self.probe_u] - sim.data[self.probe_pif_u])
-            plt.ylabel('u error')
-            plt.legend(['stroke ampl.', 'pitch torque', 'yaw torque', 'roll'], loc='best')
-
         return dict(
-            solver_error = sim.data[self.conn].solver_info['rmses'],
             x=sim.data[self.probe_x],
-            u=sim.data[self.probe_u],
-            pif_u=sim.data[self.probe_pif_u])
+            u=sim.data[self.probe_u])
 
         
 

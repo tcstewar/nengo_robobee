@@ -27,7 +27,7 @@ class GatherDataTrial(pytry.NengoTrial):
         self.param('intercept minimum', low_intercept=-1.0)
         self.param('learning_rate', learning_rate=1e-4)
         self.param('Ki', Ki=0.0)
-        self.param('use world frame for adaptation', world_adapt=True)
+        self.param('use world frame for adaptation', world_adapt=False)
         self.param('use learning adaptation', adapt=True)
         self.param('learning adaptation rate', adapt_learn_rate=1e-4)
         self.param('use learning display', use_learning_display=True)
@@ -48,7 +48,7 @@ class GatherDataTrial(pytry.NengoTrial):
             dpose_offset = np.random.uniform(-p.dpose_var, p.dpose_var, size=3)
 
             bee = NengoBee(pose_offset=pose_offset, dpose_offset=dpose_offset,
-                           )#random_wing_bias=p.wing_bias)
+                           random_wing_bias=p.wing_bias)
             
             control = PIFControl(bee.bee)
 
@@ -112,59 +112,71 @@ class GatherDataTrial(pytry.NengoTrial):
                     source_body_vel = bee.xyz_rate_body
                 source_att = bee.attitude
 
-                t_inhibit = 1.0
+                #t_inhibit = 1.0
 
-                def inhibit(t, x):
-                    if t < t_inhibit:
-                        return np.zeros(np.shape(x))
-                    else:
-                        return x
-                    # return 2.0 if t < 1.0 else 0.0
+                #def inhibit(t, x):
+                    #if t < t_inhibit:
+                    #    return np.zeros(np.shape(x))
+                    #else:
+                    #    return x
 
-                learn_vel_switch = nengo.Node(inhibit, size_in=3, size_out=3)
-                # learn_att_switch = nengo.Node(inhibit, size_in=2)
-                adapt_vel = nengo.Ensemble(n_neurons=100, dimensions=1, neuron_type=nengo.LIF())
-                # adapt_att = nengo.Ensemble(n_neurons=100, dimensions=2, neuron_type=nengo.LIF())
-                # nengo.Connection(learn_vel_switch, adapt_vel.neurons, transform=[[-1]]*adapt_vel.n_neurons)
-                
-                #learn the adaptation for dz to thrust
-                # dz_learn = nengo.Connection(adapt_vel, u[0],
-                #     learning_rule_type=nengo.PES(p.adapt_learn_rate),
-                #     function=lambda x:0,
-                #     synapse=.01)
-                # nengo.Connection(source_body_vel[2], dz_learn.learning_rule, transform=-1)
-                #learn the adapatation for dx to pitch
-                vel_learn_u = nengo.Node(None, size_in=1)
-                vel_learn = nengo.Connection(adapt_vel, vel_learn_u, learning_rule_type=nengo.PES(p.adapt_learn_rate, pre_tau=0.01),
+                #learn_vel_switch = nengo.Node(inhibit, size_in=3, size_out=3)
+                adapt_velx = nengo.Ensemble(n_neurons=100, dimensions=1, neuron_type=nengo.LIF())
+
+                vel_learnx_u = nengo.Node(None, size_in=1)
+                vel_learnx = nengo.Connection(adapt_velx, vel_learnx_u, learning_rule_type=nengo.PES(p.adapt_learn_rate, pre_tau=0.01),
                                             function=lambda x:0,
                                             synapse=.01)
-                nengo.Connection(bee.attitude[2], adapt_vel, synapse=None)
+                nengo.Connection(bee.attitude[2], adapt_velx, synapse=None)
 
-                nengo.Connection(vel_learn_u, u[1], synapse=None)
-                #nengo.Connection(vel_learn_u, vel_learn.learning_rule, transform=0.5, synapse=0)
-                # att_learn = nengo.Connection(adapt_att, u[[1, 3]], learning_rule_type=nengo.PES(.5*p.adapt_learn_rate),
-                #                             function=lambda x:[0,0],
-                #                             transform=[-1]*2,
-                #                             synapse=.01)
-                # nengo.Connection(source_body_vel, learn_vel_switch)
-                # nengo.Connection(learn_vel_switch, adapt_vel.neurons, transform=[[-1, -1, -1]]*adapt_vel.n_neurons)
+                nengo.Connection(vel_learnx_u, u[1], synapse=None)
+
+                adapt_velz = nengo.Ensemble(n_neurons=100, dimensions=1, neuron_type=nengo.LIF())
+
+                vel_learnz_u = nengo.Node(None, size_in=1)
+                vel_learnz = nengo.Connection(adapt_velz, vel_learnz_u, learning_rule_type=nengo.PES(p.adapt_learn_rate, pre_tau=0.01),
+                                            function=lambda x:0,
+                                            synapse=.01)
+                #nengo.Connection(bee.attitude[2], adapt_velz, synapse=None)
+
+                nengo.Connection(vel_learnz_u, u[0], synapse=None)
+
+                adapt_vely = nengo.Ensemble(n_neurons=100, dimensions=1, neuron_type=nengo.LIF())
+
+                vel_learny_u = nengo.Node(None, size_in=1)
+                vel_learny = nengo.Connection(adapt_vely, vel_learny_u, learning_rule_type=nengo.PES(p.adapt_learn_rate, pre_tau=0.01),
+                                            function=lambda x:0,
+                                            synapse=.01)
+                nengo.Connection(vel_learny_u, u[3], synapse=None)
+                nengo.Connection(bee.attitude[1], adapt_vely, synapse=None)
+
+
                 if p.adapt_Kp > 0:
-                    nengo.Connection(source_body_vel[0], vel_learn.learning_rule, transform=-1*p.adapt_Kp, synapse=None)
+                    nengo.Connection(source_body_vel[0], vel_learnx.learning_rule, transform=-1*p.adapt_Kp, synapse=None)
                 if p.adapt_Kd > 0:
-                    nengo.Connection(source_body_vel[0], vel_learn.learning_rule, transform=-1*p.adapt_Kd, synapse=None)
-                    nengo.Connection(source_body_vel[0], vel_learn.learning_rule, transform=1*p.adapt_Kd, synapse=0.005)
+                    nengo.Connection(source_body_vel[0], vel_learnx.learning_rule, transform=-1*p.adapt_Kd, synapse=None)
+                    nengo.Connection(source_body_vel[0], vel_learnx.learning_rule, transform=1*p.adapt_Kd, synapse=0.005)
                 if p.adapt_Ki > 0:
-                    nengo.Connection(bee.xyz[0], vel_learn.learning_rule, transform=1*p.adapt_Ki, synapse=None)
-                #learn adaptation for dy to roll
-                '''dy_learn = nengo.Connection(adapt_vel, u[3], 
-                    learning_rule_type=nengo.PES(.1*p.adapt_learn_rate), 
-                    function=lambda x:0, 
-                    synapse=.01)
-                nengo.Connection(source_body_vel[1], dy_learn.learning_rule, transform=1)'''
-                # nengo.Connection(bee.plant[bee.bee.idx_body_att[1]], adapt_vel, synapse=None)
+                    nengo.Connection(bee.xyz[0], vel_learnx.learning_rule, transform=1*p.adapt_Ki, synapse=None)
+                #currently using same K's for all dims
+                if p.adapt_Kp > 0:
+                    nengo.Connection(source_body_vel[2], vel_learnz.learning_rule, transform=-1*p.adapt_Kp, synapse=None)
+                if p.adapt_Kd > 0:
+                    nengo.Connection(source_body_vel[2], vel_learnz.learning_rule, transform=-1*p.adapt_Kd, synapse=None)
+                    nengo.Connection(source_body_vel[2], vel_learnz.learning_rule, transform=1*p.adapt_Kd, synapse=0.005)
+                if p.adapt_Ki > 0:
+                    nengo.Connection(bee.xyz[2], vel_learnz.learning_rule, transform=1*p.adapt_Ki, synapse=None)
+                #currently using same K's for all dims
+                if p.adapt_Kp > 0:
+                    nengo.Connection(source_body_vel[1], vel_learny.learning_rule, transform=.1*p.adapt_Kp, synapse=None)
+                if p.adapt_Kd > 0:
+                    nengo.Connection(source_body_vel[1], vel_learny.learning_rule, transform=.03*p.adapt_Kd, synapse=None)
+                    nengo.Connection(source_body_vel[1], vel_learny.learning_rule, transform=-.03*p.adapt_Kd, synapse=0.005)
+                if p.adapt_Ki > 0:
+                    nengo.Connection(bee.xyz[1], vel_learny.learning_rule, transform=1*p.adapt_Ki, synapse=None)
 
-                inhibit_adapt = nengo.Node(0)
-                nengo.Connection(inhibit_adapt, adapt_vel.neurons, transform=-10*np.ones((adapt_vel.n_neurons, 1)))
+                #inhibit_adapt = nengo.Node(0)
+                #nengo.Connection(inhibit_adapt, adapt_vel.neurons, transform=-10*np.ones((adapt_vel.n_neurons, 1)))
 
             nengo.Connection(bee.plant[keep_x], ens[:len(keep_x)], synapse=None, transform=1.0/ctrl['std_x_body'][keep_x])
             if len(keep_u) > 0:
@@ -234,8 +246,6 @@ class GatherDataTrial(pytry.NengoTrial):
             if p.use_learning_display:
                 import nengo_learning_display
 
-
-
                 S = 30
                 D = ens.dimensions
                 learn_plots = []
@@ -256,8 +266,12 @@ class GatherDataTrial(pytry.NengoTrial):
                 grid = np.array(grid).T
                 domain[:,:,[1,4]] = grid
 
-                vel_plot = nengo_learning_display.Plot1D(vel_learn, np.linspace(-1,1,30), range=(-1,1))
-                vel_plot.label = 'adapting for velocity'
+                vel_plot = nengo_learning_display.Plot1D(vel_learnx, np.linspace(-1,1,30), range=(-1,1))
+                vel_plot.label = 'adapting for x velocity'
+                learn_plots.append(vel_plot)
+
+                vel_plot = nengo_learning_display.Plot1D(vel_learny, np.linspace(-1,1,30), range=(-.1,.1))
+                vel_plot.label = 'adapting for y velocity'
                 learn_plots.append(vel_plot)
 
                 def on_step(sim):

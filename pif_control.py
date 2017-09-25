@@ -1,6 +1,6 @@
 import sys
 # sys.path.append('.')
-sys.path.append(r'C:\Users\taylo\OneDrive\Cornell\LISC\Code\RoboBee\PyBee3D_Basic')
+sys.path.append(r'C:\Users\taylo\OneDrive\Cornell\LISC\Code\RoboBee\PyBee3D\PyBee3D')
 import numpy as np
 import scipy
 import nengo
@@ -27,13 +27,31 @@ class PIFControl(nengo.Network):
             self.y_star = nengo.Node(None, size_in=4)
             self.x = nengo.Node(None, size_in=20)
             self.u = nengo.Node(None, size_in=4)
+            def get_u_dot(t, v): return self.u_dot
+            self.u_dot_node = nengo.Node(get_u_dot, size_in=4)
             nengo.Connection(self.y_star, self.control[:4], synapse=None)
             nengo.Connection(self.x, self.control[4:24], synapse=None)
             nengo.Connection(self.u, self.control[24:], synapse=None)
+            # nengo.Connection(self.u_dot_node, self.u_dot, synapse=None)
 
     def update(self, t, v):
         y_star, x, u = v[:4], v[4:24], v[24:28]
         self.integrator_control.set_f_params(y_star, x, u, self.bee)
         eta = self.integrator_control.integrate(t)
+        self.u_dot = self.controller.get_control_dynamics(eta, t, y_star, x, u, self.bee)[:4]
         u = eta[:4]
         return u
+    #
+    # def update(self, t, v):
+    #     y_star, x, u = v[:4], v[4:24], v[24:28]
+    #     self.integrator_control.set_f_params(y_star, x, u, self.bee)
+    #     eta = self.integrator_control.integrate(t)
+    #     # u = eta[:4]
+    #     xi = eta[4:]
+    #
+    #     eta = np.concatenate((u, xi))
+    #
+    #     eta_dot = self.controller.get_control_dynamics(eta, t, y_star, x, u, self.bee)
+    #     u_dot = eta_dot[:4]
+    #
+    #     return u_dot

@@ -1,6 +1,6 @@
 import sys
 # sys.path.append('.')
-sys.path.append(r'C:\Users\taylo\OneDrive\Cornell\LISC\Code\RoboBee\PyBee3D_Basic')
+sys.path.append(r'C:\Users\taylor\OneDrive\Cornell\LISC\Code\RoboBee\PyBee3D\PyBee3D')
 import robobee
 import scipy
 import nengo
@@ -23,10 +23,13 @@ class NengoBee(nengo.Network):
         self.u_0 = traj_data['u'][0]
 
         with self:
-            self.plant = nengo.Node(self.update, size_in=len(self.u_0))
+            self.plant_unfilt = nengo.Node(self.update, size_in=len(self.u_0))
 
-            self.u = nengo.Node(None, size_in=self.plant.size_in)
-            nengo.Connection(self.u, self.plant, synapse=None)
+            self.plant = nengo.Node(None, size_in=20)
+            nengo.Connection(self.plant_unfilt, self.plant, synapse=0.02)
+
+            self.u = nengo.Node(None, size_in=self.plant_unfilt.size_in)
+            nengo.Connection(self.u, self.plant_unfilt, synapse=None)
 
             self.xyz = nengo.Node(None, size_in=3)
             nengo.Connection(self.plant[11:14], self.xyz, synapse=None)

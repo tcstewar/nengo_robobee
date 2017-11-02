@@ -8,9 +8,16 @@ from scipy import io
 
 bee_trial = neuron_bee.GatherDataTrial()
 
-t_max = 4.0
+t_max = 1.0
 
-data = bee_trial.run(use_pif=True, adapt=False, use_learning_display=False, T=t_max, n_neurons=500, adapt_Kp=20, adapt_learn_rate=1e-4, seed=1)
+data = bee_trial.run(use_pif=False,
+                     adapt=True,
+                     pose_var=0.5,
+                     dpose_var=20,
+                     use_learning_display=False,
+                     T=t_max,
+                     n_neurons=500,
+                     seed=1)
 
 bee = nengo_bee.NengoBee().bee
 
@@ -19,9 +26,9 @@ print(data.keys())
 x_world = data['x']
 u = data['u']
 u_pif = data['pif_u']
-u_dot = data['pif_u_dot']
+# u_dot = data['pif_u_dot']
 ens = data['ens']
-learn_y = data['learny']
+# learn_y = data['learny']
 
 x_body = bee.world_state_to_body(x_world)
 
@@ -61,22 +68,22 @@ plt.plot(u_pif[:, [0,1,3]], '--')
 plt.ylabel('Control Input')
 plt.title('Control Inputs')
 plt.legend(['$u_a$', '$u_p$', '$u_r$', '$u_a^{pif}$', '$u_p^{pif}$', '$u_r^{pif}$'])
-
-plt.figure()
-plt.plot(u_dot[:, [0, 1, 3]])
-plt.ylabel('$\dot{u}$')
-plt.title('Control Input Rate')
-plt.legend(['$\dot{u}_a$', '$\dot{u}_p$', '$\dot{u}_r$'])
-
-plt.figure()
-plt.plot(ens[:, [0, 1, 3]])
-plt.ylabel('$\hat{\dot{u}}$')
-plt.title('Approx Control Rate')
-plt.legend(['$\dot{u}_a$', '$\dot{u}_p$', '$\dot{u}_r$'])
-
-plt.figure()
-plt.plot(learn_y)
-plt.ylabel('Learned $u_r$')
-plt.title('Control Input')
+#
+# plt.figure()
+# plt.plot(u_dot[:, [0, 1, 3]])
+# plt.ylabel('$\dot{u}$')
+# plt.title('Control Input Rate')
+# plt.legend(['$\dot{u}_a$', '$\dot{u}_p$', '$\dot{u}_r$'])
+#
+# plt.figure()
+# plt.plot(ens[:, [0, 1, 3]])
+# plt.ylabel('$\hat{\dot{u}}$')
+# plt.title('Approx Control Rate')
+# plt.legend(['$\dot{u}_a$', '$\dot{u}_p$', '$\dot{u}_r$'])
+#
+# plt.figure()
+# plt.plot(learn_y)
+# plt.ylabel('Learned $u_r$')
+# plt.title('Control Input')
 
 plt.show()

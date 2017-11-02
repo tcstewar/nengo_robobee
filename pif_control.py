@@ -1,6 +1,6 @@
 import sys
 # sys.path.append('.')
-sys.path.append(r'C:\Users\taylo\OneDrive\Cornell\LISC\Code\RoboBee\PyBee3D\PyBee3D')
+sys.path.append(r'..\PyBee3D\PyBee3D')
 import numpy as np
 import scipy
 import nengo

@@ -1,6 +1,6 @@
 import sys
 # sys.path.append('.')
-sys.path.append(r'C:\Users\taylor\OneDrive\Cornell\LISC\Code\RoboBee\PyBee3D\PyBee3D')
+sys.path.append(r'..\PyBee3D\PyBee3D')
 import robobee
 import scipy
 import nengo
@@ -47,8 +47,15 @@ class NengoBee(nengo.Network):
                 body_x = self.bee.world_state_to_body(x)
                 return body_x[17:20]
 
+            def rotate_full(t, x):
+                body_x = self.bee.world_state_to_body(x)
+                return body_x
+
             self.xyz_rate_body = nengo.Node(rotate, size_in=20)
             nengo.Connection(self.plant, self.xyz_rate_body, synapse=None)
+
+            self.x_body = nengo.Node(rotate_full, size_in=20)
+            nengo.Connection(self.plant, self.x_body, synapse=None)
 
     def update(self, t, u):
         self.integrator_dynamics.set_f_params(u)

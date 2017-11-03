@@ -4,18 +4,29 @@ sys.path.append(r'..\PyBee3D\PyBee3D')
 import robobee
 import scipy
 import nengo
+import numpy as np
 
 class NengoBee(nengo.Network):
-    def __init__(self, label=None, pose_offset=(0, 0, 0), dpose_offset=(0, 0, 0), random_wing_bias=False):
+    def __init__(self, label=None,
+                 pose_offset=(0, 0, 0),
+                 dpose_offset=(0, 0, 0),
+                 random_wing_bias=False,
+                 v_wind=0.0,
+                 phi_0=0.0,
+                 actuator_failure=False):
         super(NengoBee, self).__init__(label=label)
 
-        self.bee = robobee.RoboBee(random_wing_bias=random_wing_bias)
+        self.v_wind=v_wind
+
+        self.bee = robobee.RoboBee(random_wing_bias=random_wing_bias, actuator_failure=actuator_failure)
 
         traj_data = scipy.io.loadmat('Hover_Data.mat')
         x = traj_data['x'][0]
 
         x[8:11] += pose_offset
         x[14:17] += dpose_offset
+
+        x[8] = phi_0
 
         self.integrator_dynamics = scipy.integrate.ode(self.bee.get_dynamics).set_integrator('dopri5')
         self.integrator_dynamics.set_initial_value(x, 0)
@@ -58,6 +69,6 @@ class NengoBee(nengo.Network):
             nengo.Connection(self.plant, self.x_body, synapse=None)
 
     def update(self, t, u):
-        self.integrator_dynamics.set_f_params(u)
+        self.integrator_dynamics.set_f_params(u, np.array([self.v_wind, 0, 0]))
         x = self.integrator_dynamics.integrate(t)
         return x

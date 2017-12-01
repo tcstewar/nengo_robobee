@@ -40,6 +40,7 @@ class PIFControl(nengo.Network):
         eta = self.integrator_control.integrate(t)
         self.u_dot = self.controller.get_control_dynamics(eta, t, y_star, x, u, self.bee)[:4]
         u = eta[:4]
+        u[2] = 0
         return u
     #
     # def update(self, t, v):

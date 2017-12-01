@@ -13,12 +13,21 @@ class NengoBee(nengo.Network):
                  random_wing_bias=False,
                  v_wind=0.0,
                  phi_0=0.0,
-                 actuator_failure=False):
+                 actuator_failure=False,
+                 sample_dt=1E-3,
+                 delay=8E-3):
         super(NengoBee, self).__init__(label=label)
 
         self.v_wind=v_wind
+        self.sample_dt = sample_dt
+        self.delay = delay
+
+        self.data_buffer = []
 
         self.bee = robobee.RoboBee(random_wing_bias=random_wing_bias, actuator_failure=actuator_failure)
+
+        # self.bee.ROLL_BIAS = 1.0
+        # self.bee.PITCH_BIAS = 10.0
 
         traj_data = scipy.io.loadmat('Hover_Data.mat')
         x = traj_data['x'][0]
@@ -62,13 +71,45 @@ class NengoBee(nengo.Network):
                 body_x = self.bee.world_state_to_body(x)
                 return body_x
 
+            self.sampled_body_state = np.zeros(20)
+            self.sampled_body_vel = np.zeros(3)
+            self.sampled_t = [0, 0]
+
+            def sample_body_state(t, x):
+                if self.sampled_t[0] <= t:
+                    self.sampled_body_state = x
+                    self.sampled_t[0] += max(self.sample_dt, t - self.sampled_t[0])
+                return self.sampled_body_state
+
+            def sample_body_vel(t, x):
+                if self.sampled_t[1] <= t:
+                    self.sampled_body_vel = x
+                    self.sampled_t[1] += max(self.sample_dt, t - self.sampled_t[1])
+                return self.sampled_body_vel
+
+
+            def delayed_state(t, x):
+                tau = 0
+                while len(self.data_buffer) > 0 and tau < t - self.delay:
+                    tau = self.data_buffer
+
             self.xyz_rate_body = nengo.Node(rotate, size_in=20)
             nengo.Connection(self.plant, self.xyz_rate_body, synapse=None)
 
             self.x_body = nengo.Node(rotate_full, size_in=20)
             nengo.Connection(self.plant, self.x_body, synapse=None)
 
+            self.x_body_sampled = nengo.Node(sample_body_state, size_in=20)
+            nengo.Connection(self.x_body, self.x_body_sampled, synapse=None)
+
+            self.body_vel_sampled = nengo.Node(sample_body_vel, size_in=3)
+            nengo.Connection(self.xyz_rate_body, self.body_vel_sampled, synapse=None)
+
     def update(self, t, u):
         self.integrator_dynamics.set_f_params(u, np.array([self.v_wind, 0, 0]))
         x = self.integrator_dynamics.integrate(t)
+
+        self.data_buffer.append({'data': x, 't': t})
+        self.update_delayed_state(
+
         return x

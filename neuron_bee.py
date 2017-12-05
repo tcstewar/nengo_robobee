@@ -18,7 +18,7 @@ class GatherDataTrial(pytry.NengoTrial):
         self.param('angle', angle=0.0)
         self.param('initial pose variability', pose_var=0.0)
         self.param('initial rotation rate variability', dpose_var=0.0)
-        self.param('controller filename', ctrl_filename='gather-hover_11_17.npz')
+        self.param('controller filename', ctrl_filename='gather-gain_scheduled_12_1.npz')
         self.param('time', T=1.0)
         self.param('number of neurons', n_neurons=500)
         self.param('regularization', reg=0.1)
@@ -39,7 +39,7 @@ class GatherDataTrial(pytry.NengoTrial):
         self.param('wind speed', v_wind=0.0)
         self.param('Initial heading', phi_0=0.0)
         self.param('Actuator Failure', actuator_failure=False)
-        self.param('Controller Time Step', control_dt=0.002)
+        self.param('Controller Time Step', control_dt=0.001)
 
     def model(self, p):
 
@@ -67,15 +67,18 @@ class GatherDataTrial(pytry.NengoTrial):
             keep_x = [robobee.state_names.index(name) for name in keep_x_names]
             # keep_u = [1, 3]
             keep_u = []
+            keep_y_star = [0]
 
             # x_vals = ctrl['norm_x'][:,keep_x]
             # Use the body frame velocities
+            y_star_vals = ctrl['norm_y_star'][:,keep_y_star]
             x_vals = ctrl['norm_x_body'][:,keep_x]
             u_vals = ctrl['norm_u'][:,keep_u]
 
             target = ctrl['all_u']
 
-            pts = np.hstack([x_vals, u_vals])
+            pts = np.hstack([x_vals, u_vals, y_star_vals])
+            # pts = np.hstack([x_vals, u_vals])
 
             D = pts.shape[1]
             ens = nengo.Ensemble(n_neurons=p.n_neurons, dimensions=D,
@@ -84,6 +87,7 @@ class GatherDataTrial(pytry.NengoTrial):
 
             u_unfilt = nengo.Node(None, size_in=4)
             u = nengo.Node(None, size_in=4)
+            # y_star = nengo.Node(None, size_in=4)
 
             if p.Ki > 0:
                 source_body_vel = bee.xyz_rate_body
@@ -148,27 +152,33 @@ class GatherDataTrial(pytry.NengoTrial):
                 self.probe_adapty_u = nengo.Probe(vel_learny_u, synapse=None)
                 self.probe_adaptz_u = nengo.Probe(vel_learnz_u, synapse=None)
 
+                # TODO: Replace source_body_vel below with source_body_vel - target_body_vel
+                vel_error = nengo.Node(None, size_in=3)
+
+                nengo.Connection(control.target_body_vel, vel_error, transform=-1)
+                nengo.Connection(source_body_vel, vel_error)
+
                 if p.adapt_Kp > 0:
-                    nengo.Connection(source_body_vel[0], vel_learnx.learning_rule, transform=-50*p.adapt_Kp, synapse=None)
+                    nengo.Connection(vel_error[0], vel_learnx.learning_rule, transform=-50*p.adapt_Kp, synapse=None)
                 if p.adapt_Kd > 0:
-                    nengo.Connection(source_body_vel[0], vel_learnx.learning_rule, transform=-0.8*p.adapt_Kd, synapse=None)
-                    nengo.Connection(source_body_vel[0], vel_learnx.learning_rule, transform=0.8*p.adapt_Kd, synapse=0.005)
+                    nengo.Connection(vel_error[0], vel_learnx.learning_rule, transform=-0.8*p.adapt_Kd, synapse=None)
+                    nengo.Connection(vel_error[0], vel_learnx.learning_rule, transform=0.8*p.adapt_Kd, synapse=0.005)
                 if p.adapt_Ki > 0:
                     nengo.Connection(bee.xyz[0], vel_learnx.learning_rule, transform=1*p.adapt_Ki, synapse=None)
                 #currently using same K's for all dims
                 if p.adapt_Kp > 0:
-                    nengo.Connection(source_body_vel[2], vel_learnz.learning_rule, transform=-20*p.adapt_Kp, synapse=None)
+                    nengo.Connection(vel_error[2], vel_learnz.learning_rule, transform=-60*p.adapt_Kp, synapse=None)
                 if p.adapt_Kd > 0:
-                    nengo.Connection(source_body_vel[2], vel_learnz.learning_rule, transform=-1*p.adapt_Kd, synapse=None)
-                    nengo.Connection(source_body_vel[2], vel_learnz.learning_rule, transform=1*p.adapt_Kd, synapse=0.005)
+                    nengo.Connection(vel_error[2], vel_learnz.learning_rule, transform=-5*p.adapt_Kd, synapse=None)
+                    nengo.Connection(vel_error[2], vel_learnz.learning_rule, transform=5*p.adapt_Kd, synapse=0.005)
                 if p.adapt_Ki > 0:
                     nengo.Connection(bee.xyz[2], vel_learnz.learning_rule, transform=1*p.adapt_Ki, synapse=None)
                 #currently using same K's for all dims
                 if p.adapt_Kp > 0:
-                    nengo.Connection(source_body_vel[1], vel_learny.learning_rule, transform=5.0*p.adapt_Kp, synapse=None)
+                    nengo.Connection(vel_error[1], vel_learny.learning_rule, transform=5.0*p.adapt_Kp, synapse=None)
                 if p.adapt_Kd > 0:
-                    nengo.Connection(source_body_vel[1], vel_learny.learning_rule, transform=1.5*p.adapt_Kd, synapse=None)
-                    nengo.Connection(source_body_vel[1], vel_learny.learning_rule, transform=-1.5*p.adapt_Kd, synapse=0.005)
+                    nengo.Connection(vel_error[1], vel_learny.learning_rule, transform=1.5*p.adapt_Kd, synapse=None)
+                    nengo.Connection(vel_error[1], vel_learny.learning_rule, transform=-1.5*p.adapt_Kd, synapse=0.005)
                 if p.adapt_Ki > 0:
                     nengo.Connection(bee.xyz[1], vel_learny.learning_rule, transform=0*0.1*p.adapt_Ki, synapse=None)
 
@@ -183,18 +193,26 @@ class GatherDataTrial(pytry.NengoTrial):
             if len(keep_u) > 0:
                 nengo.Connection(bee.u[keep_u], ens[len(keep_x):], synapse=None, transform=1.0/ctrl['std_u'][keep_u])
 
+            nengo.Connection(control.y_star[keep_y_star], ens[-len(keep_y_star):], synapse=None, transform=1.0/ctrl['std_y_star'][keep_y_star])
+            # nengo.Connection(v, ens[-1], synapse=None, transform=1.0/ctrl['std_y_star'][keep_y_star])
+
             nengo.Connection(nengo.Node((ctrl['mean_x_body']/ctrl['std_x_body'])[keep_x]), ens[:len(keep_x)], transform=-1, synapse=None)
             if len(keep_u) > 0:
                 nengo.Connection(nengo.Node((ctrl['mean_u']/ctrl['std_u'])[keep_u]), ens[len(keep_x):], transform=-1, synapse=None)
+
+            nengo.Connection(nengo.Node((ctrl['mean_y_star'] / ctrl['std_y_star'])[keep_y_star]), ens[-len(keep_y_star):], transform=-1, synapse=None)
 
             if p.oracle:
                 learning_rule=nengo.PES(learning_rate=p.learning_rate)
             else:
                 learning_rule=None
-            self.conn = nengo.Connection(ens, u_unfilt, eval_points=pts, scale_eval_points=False, function=target,
-                             synapse=0.005,
-                             learning_rule_type=learning_rule,
-                             solver=nengo.solvers.LstsqL2(reg=p.reg))
+            self.conn = nengo.Connection(ens, u_unfilt,
+                                         eval_points=pts,
+                                         scale_eval_points=False,
+                                         function=target,
+                                         synapse=0.006,
+                                         learning_rule_type=learning_rule,
+                                         solver=nengo.solvers.LstsqL2(reg=p.reg))
 
             # if p.use_pif:
             #     nengo.Connection(control.control, bee.u, synapse=0)
@@ -202,6 +220,7 @@ class GatherDataTrial(pytry.NengoTrial):
             #     nengo.Connection(u, bee.u, synapse=0)
             if p.use_pif:
                 nengo.Connection(control.control, u, synapse=0)
+                # nengo.Connection(control.y_star, y_star, synapse=None)
             else:
                 nengo.Connection(u_unfilt[0], u[0], synapse=None)
                 nengo.Connection(u_unfilt[1:], u[1:], synapse=None)
@@ -211,7 +230,9 @@ class GatherDataTrial(pytry.NengoTrial):
             # nengo.Connection(bee.u, control.u, synapse=None)
             nengo.Connection(control.control, control.u, synapse=0)
 
-            v = nengo.Node(p.velocity)
+            # v = nengo.Node(p.velocity)
+            def get_velocity_set_point(t): return np.maximum(0.5*np.cos(4*t + np.pi), 0)
+            v = nengo.Node(get_velocity_set_point)
             nengo.Connection(v, control.y_star[0], synapse=None)
             a = nengo.Node(p.angle)
             nengo.Connection(a, control.y_star[2], synapse=None)
@@ -220,7 +241,7 @@ class GatherDataTrial(pytry.NengoTrial):
             self.probe_x = nengo.Probe(control.x, synapse=None)
             self.probe_x_unfilt = nengo.Probe(bee.plant_unfilt, synapse=None)
             self.probe_u = nengo.Probe(u, synapse=None)
-            # self.probe_pif_u_dot = nengo.Probe(control.u_dot_node, synapse=None)
+            self.probe_y_star = nengo.Probe(control.y_star, synapse=None)
             self.probe_ens = nengo.Probe(u_unfilt, synapse=None)
 
 
@@ -334,6 +355,7 @@ class GatherDataTrial(pytry.NengoTrial):
             solver_error = sim.data[self.conn].solver_info['rmses'],
             x=sim.data[self.probe_x],
             u=sim.data[self.probe_u],
+            y_star=sim.data[self.probe_y_star],
             pif_u=sim.data[self.probe_pif_u],
             # pif_u_dot=sim.data[self.probe_pif_u_dot],
             ens=sim.data[self.probe_ens],

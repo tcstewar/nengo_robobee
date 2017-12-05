@@ -1,10 +1,11 @@
 import sys
-# sys.path.append('.')
-sys.path.append(r'..\PyBee3D\PyBee3D')
-import robobee
 import scipy
 import nengo
 import numpy as np
+from os import path
+# sys.path.append('.')
+sys.path.append(r'..\PyBee3D\PyBee3D')
+import robobee
 
 class NengoBee(nengo.Network):
     def __init__(self, label=None,
@@ -14,13 +15,11 @@ class NengoBee(nengo.Network):
                  v_wind=0.0,
                  phi_0=0.0,
                  actuator_failure=False,
-                 sample_dt=1E-3,
-                 delay=8E-3):
+                 sample_dt=1E-3):
         super(NengoBee, self).__init__(label=label)
 
         self.v_wind=v_wind
         self.sample_dt = sample_dt
-        self.delay = delay
 
         self.data_buffer = []
 
@@ -29,7 +28,7 @@ class NengoBee(nengo.Network):
         # self.bee.ROLL_BIAS = 1.0
         # self.bee.PITCH_BIAS = 10.0
 
-        traj_data = scipy.io.loadmat('Hover_Data.mat')
+        traj_data = self.get_initial_set_point(np.array([0, 0, 0, 0]))
         x = traj_data['x'][0]
 
         x[8:11] += pose_offset
@@ -86,12 +85,11 @@ class NengoBee(nengo.Network):
                     self.sampled_body_vel = x
                     self.sampled_t[1] += max(self.sample_dt, t - self.sampled_t[1])
                 return self.sampled_body_vel
-
-
-            def delayed_state(t, x):
-                tau = 0
-                while len(self.data_buffer) > 0 and tau < t - self.delay:
-                    tau = self.data_buffer
+            #
+            # def delayed_state(t, x):
+            #     tau = 0
+            #     while len(self.data_buffer) > 0 and tau < t - self.delay:
+            #         tau = self.data_buffer
 
             self.xyz_rate_body = nengo.Node(rotate, size_in=20)
             nengo.Connection(self.plant, self.xyz_rate_body, synapse=None)
@@ -110,6 +108,13 @@ class NengoBee(nengo.Network):
         x = self.integrator_dynamics.integrate(t)
 
         self.data_buffer.append({'data': x, 't': t})
-        self.update_delayed_state(
+        # self.update_delayed_state(
 
         return x
+
+    def get_initial_set_point(self, y_star):
+        folder_name = r'..\PyBee3D\PyBee3D\Saved Data\Maneuvers\Flight_Envelope\No_Yaw'
+        file_name = 'vel{0:3.1f}_turn{1:3.1f}_climb{2:3.1f}_slip{3:3.1f}'.format(y_star[0], y_star[1], y_star[2], y_star[3])
+        file_path = path.join(folder_name, file_name)
+        data = scipy.io.loadmat(file_path)
+        return data

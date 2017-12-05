@@ -29,9 +29,13 @@ class PIFControl(nengo.Network):
             self.u = nengo.Node(None, size_in=4)
             def get_u_dot(t, v): return self.u_dot
             self.u_dot_node = nengo.Node(get_u_dot, size_in=4)
+            def get_target_vel(t, v): return self.bee.world_state_to_body(self.controller.get_x_star(v))[17:20]
+            self.target_body_vel = nengo.Node(get_target_vel, size_in=4)
+
             nengo.Connection(self.y_star, self.control[:4], synapse=None)
             nengo.Connection(self.x, self.control[4:24], synapse=None)
             nengo.Connection(self.u, self.control[24:], synapse=None)
+            nengo.Connection(self.y_star, self.target_body_vel, synapse=None)
             # nengo.Connection(self.u_dot_node, self.u_dot, synapse=None)
 
     def update(self, t, v):

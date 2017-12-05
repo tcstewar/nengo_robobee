@@ -8,10 +8,12 @@ from scipy import io
 
 bee_trial = neuron_bee.GatherDataTrial()
 
-t_max = 4.0
+t_max = 6.0
 
 data = bee_trial.run(use_pif=False,
                      adapt=True,
+                     ctrl_filename='gather-gain_scheduled_12_1.npz',
+                     velocity=0.4,
                      pose_var=0.5,
                      dpose_var=20,
                      # pose_var=0,
@@ -20,10 +22,12 @@ data = bee_trial.run(use_pif=False,
                      T=t_max,
                      n_neurons=500,
                      seed=10,
-                     wing_bias=True,
+                     wing_bias=False,
                      v_wind=0,
                      phi_0=0,
-                     actuator_failure=False)
+                     actuator_failure=False,
+                     adapt_Kp=0.6,
+                     adapt_Kd=18)
 
 bee = nengo_bee.NengoBee().bee
 
@@ -55,28 +59,32 @@ io.savemat('saved_data/snn_debug_trial.mat',
             'x_unfilt': x_unfilt})
 sns.set()
 plt.figure()
-plt.plot(x_body[:, bee.idx_body_att])
+plt.plot(t_log, x_body[:, bee.idx_body_att])
 plt.ylabel('Angle (rad)')
+plt.xlabel('t (s)')
 plt.title('Euler Angles')
 plt.legend(['$\phi$', '$\\theta$', '$\psi$'])
 
 plt.figure()
-plt.plot(x_body[:, bee.idx_body_pos])
+plt.plot(t_log, x_body[:, bee.idx_body_pos])
 plt.ylabel('Position (m)')
+plt.xlabel('t (s)')
 plt.title('Position')
 plt.legend(['$x$', '$y$', '$z$'])
 
 plt.figure()
-plt.plot(x_body[:, bee.idx_body_att_rate])
+plt.plot(t_log, x_body[:, bee.idx_body_att_rate])
 plt.ylabel('Angular Rate (rad/s)')
+plt.xlabel('t (s)')
 plt.title('Angular Rate')
 plt.legend(['$d\phi/dt$', '$d\\theta/dt$', '$d\psi/dt$'])
 
 plt.figure()
-plt.plot(x_body[:, bee.idx_body_vel])
+plt.plot(t_log, x_body[:, bee.idx_body_vel])
 plt.ylabel('Velocity (m/s)')
+plt.xlabel('t (s)')
 plt.title('Velocity')
-plt.legend(['$\dot{x}$', '$\dot{y}$', '$\dot{z}$'])
+plt.legend(['$v_x$', '$v_y$', '$v_z$'])
 
 plt.figure()
 plt.plot(t_log, u[:, [0, 1, 3]])

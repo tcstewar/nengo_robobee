@@ -23,10 +23,11 @@ class NengoBee(nengo.Network):
 
         self.data_buffer = []
 
-        self.bee = robobee.RoboBee(random_wing_bias=random_wing_bias, actuator_failure=actuator_failure)
+        self.bee = robobee.RoboBee(random_wing_bias=random_wing_bias, actuator_failure=actuator_failure, a_theta=-0.2, b_theta=0.04, new_yaw_control=True)
 
-        # self.bee.ROLL_BIAS = 1.0
-        # self.bee.PITCH_BIAS = 10.0
+        if random_wing_bias == True:
+            self.bee.ROLL_BIAS = 1.0
+            self.bee.PITCH_BIAS = 10.0
 
         traj_data = self.get_initial_set_point(np.array([0, 0, 0, 0]))
         x = traj_data['x'][0]
@@ -112,8 +113,9 @@ class NengoBee(nengo.Network):
 
         return x
 
-    def get_initial_set_point(self, y_star):
-        folder_name = r'..\PyBee3D\PyBee3D\Saved Data\Maneuvers\Flight_Envelope\No_Yaw'
+    @staticmethod
+    def get_initial_set_point(y_star):
+        folder_name = r'..\PyBee3D\PyBee3D\Saved Data\Maneuvers\Flight_Envelope\New_Yaw'
         file_name = 'vel{0:3.1f}_turn{1:3.1f}_climb{2:3.1f}_slip{3:3.1f}'.format(y_star[0], y_star[1], y_star[2], y_star[3])
         file_path = path.join(folder_name, file_name)
         data = scipy.io.loadmat(file_path)

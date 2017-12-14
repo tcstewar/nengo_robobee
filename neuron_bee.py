@@ -43,6 +43,7 @@ class GatherDataTrial(pytry.NengoTrial):
         self.param('Actuator Failure', actuator_failure=False)
         self.param('Controller Time Step', control_dt=0.001)
         self.param('Fancy Flight', fancy_flight=False)
+        self.param('Initial y_star Conditions', init_with_y_star=False)
 
     def model(self, p):
 
@@ -53,12 +54,19 @@ class GatherDataTrial(pytry.NengoTrial):
             pose_offset = np.random.uniform(-p.pose_var, p.pose_var, size=3)
             dpose_offset = np.random.uniform(-p.dpose_var, p.dpose_var, size=3)
 
+            y_star_init = np.array([0, 0, 0, 0])
+            if p.init_with_y_star:
+                y_star_init[0] = p.velocity
+                y_star_init[1] = p.turn_rate
+                y_star_init[2] = p.angle
+
             bee = NengoBee(pose_offset=pose_offset, dpose_offset=dpose_offset,
                            random_wing_bias=p.wing_bias,
                            v_wind=p.v_wind,
                            phi_0=p.phi_0,
                            actuator_failure=p.actuator_failure,
-                           sample_dt=p.control_dt)
+                           sample_dt=p.control_dt,
+                           y_star_init=y_star_init)
             
             control = PIFControl(bee.bee)
 
@@ -70,7 +78,7 @@ class GatherDataTrial(pytry.NengoTrial):
             keep_x = [robobee.state_names.index(name) for name in keep_x_names]
             # keep_u = [1, 3]
             keep_u = []
-            keep_y_star = [0, 1, 2]
+            keep_y_star = [0, 2]
 
             # x_vals = ctrl['norm_x'][:,keep_x]
             # Use the body frame velocities
@@ -162,23 +170,23 @@ class GatherDataTrial(pytry.NengoTrial):
                 nengo.Connection(source_body_vel, vel_error)
 
                 if p.adapt_Kp > 0:
-                    nengo.Connection(vel_error[0], vel_learnx.learning_rule, transform=-50*p.adapt_Kp, synapse=None)
+                    nengo.Connection(vel_error[0], vel_learnx.learning_rule, transform=-60*p.adapt_Kp, synapse=None)
                 if p.adapt_Kd > 0:
-                    nengo.Connection(vel_error[0], vel_learnx.learning_rule, transform=-0.8*p.adapt_Kd, synapse=None)
-                    nengo.Connection(vel_error[0], vel_learnx.learning_rule, transform=0.8*p.adapt_Kd, synapse=0.005)
+                    nengo.Connection(vel_error[0], vel_learnx.learning_rule, transform=-1600*p.adapt_Kd, synapse=None)
+                    nengo.Connection(vel_error[0], vel_learnx.learning_rule, transform=1600*p.adapt_Kd, synapse=0.005)
                 if p.adapt_Ki > 0:
                     nengo.Connection(bee.xyz[0], vel_learnx.learning_rule, transform=1*p.adapt_Ki, synapse=None)
                 #currently using same K's for all dims
                 if p.adapt_Kp > 0:
-                    nengo.Connection(vel_error[2], vel_learnz.learning_rule, transform=-50*p.adapt_Kp, synapse=None)
+                    nengo.Connection(vel_error[2], vel_learnz.learning_rule, transform=-40*p.adapt_Kp, synapse=None)
                 if p.adapt_Kd > 0:
-                    nengo.Connection(vel_error[2], vel_learnz.learning_rule, transform=-20*p.adapt_Kd, synapse=None)
-                    nengo.Connection(vel_error[2], vel_learnz.learning_rule, transform=20*p.adapt_Kd, synapse=0.005)
+                    nengo.Connection(vel_error[2], vel_learnz.learning_rule, transform=-8000*p.adapt_Kd, synapse=None)
+                    nengo.Connection(vel_error[2], vel_learnz.learning_rule, transform=8000*p.adapt_Kd, synapse=0.005)
                 if p.adapt_Ki > 0:
                     nengo.Connection(bee.xyz[2], vel_learnz.learning_rule, transform=1*p.adapt_Ki, synapse=None)
                 #currently using same K's for all dims
                 if p.adapt_Kp > 0:
-                    nengo.Connection(vel_error[1], vel_learny.learning_rule, transform=1.5*p.adapt_Kp, synapse=None)
+                    nengo.Connection(vel_error[1], vel_learny.learning_rule, transform=4*p.adapt_Kp, synapse=None)
                 if p.adapt_Kd > 0:
                     nengo.Connection(vel_error[1], vel_learny.learning_rule, transform=0.2*p.adapt_Kd, synapse=None)
                     nengo.Connection(vel_error[1], vel_learny.learning_rule, transform=-0.2*p.adapt_Kd, synapse=0.005)
@@ -237,33 +245,41 @@ class GatherDataTrial(pytry.NengoTrial):
                 def get_velocity_set_point(t):
                     if t < 2.0:
                         return 0
-                    elif t < 2.5:
-                        return 0.5
                     elif t < 3.0:
-                        return 0
+                        return 0.2
                     elif t < 3.5:
-                        return 0.5
-                    elif t < 4.0:
                         return 0
                     elif t < 4.5:
-                        return 0.5
+                        return 0.2
+                    elif t < 5.0:
+                        return 0
+                    elif t < 6.0:
+                        return 0.2
                     else:
                         return 0
+                    # if t < 2.0:
+                    #     return 0
+                    # else:
+                    #     return 0.5
                 def get_angle_set_point(t):
                     if t < 2.0:
                         return 0
-                    elif t < 2.5:
-                        return 90
                     elif t < 3.0:
-                        return 0
+                        return 90
                     elif t < 3.5:
                         return 0
-                    elif t < 4.0:
-                        return 0
                     elif t < 4.5:
+                        return 0
+                    elif t < 5.0:
+                        return 0
+                    elif t < 6.0:
                         return -90
                     else:
                         return 0
+                    # if t < 2.0:
+                    #     return 0
+                    # else:
+                    #     return 90*np.sin(2*np.pi/6*(t - 2.0))
                 v = nengo.Node(get_velocity_set_point)
                 a = nengo.Node(get_angle_set_point)
             else:

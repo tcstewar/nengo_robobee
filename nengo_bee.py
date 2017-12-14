@@ -15,7 +15,8 @@ class NengoBee(nengo.Network):
                  v_wind=0.0,
                  phi_0=0.0,
                  actuator_failure=False,
-                 sample_dt=1E-3):
+                 sample_dt=1E-3,
+                 y_star_init=np.array([0, 0, 0, 0])):
         super(NengoBee, self).__init__(label=label)
 
         self.v_wind=v_wind
@@ -29,7 +30,7 @@ class NengoBee(nengo.Network):
             self.bee.ROLL_BIAS = 1.0
             self.bee.PITCH_BIAS = 10.0
 
-        traj_data = self.get_initial_set_point(np.array([0, 0, 0, 0]))
+        traj_data = self.get_initial_set_point(y_star_init)
         x = traj_data['x'][0]
 
         x[8:11] += pose_offset

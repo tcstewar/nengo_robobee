@@ -35,53 +35,49 @@ def run_model(i, n_trials, folder, att_max, att_rate_max, vel_max, angle_max, tu
 if __name__ == "__main__":
     bee_model = neuron_bee.GatherDataTrial()
 
-    folder = 'gather_gain_scheduled_12_13'
+    folder = 'gather_gain_scheduled_12_14'
 
     if not os.path.exists(folder):
         os.makedirs(folder)
 
-    FIXED_ANGLE=True
+    FIXED_SETPOINT=True
 
-    att_max = 0.4
-    att_rate_max = 12
-    vel_max = 0
-    angle_max = 0
-    turn_rate_max = 0
-    t_max = 2.0
+    att_max = 0.8
+    att_rate_max = 8
+    # vel_max = 0.3
+    # angle_max = 90
+    # turn_rate_max = 0
+    t_max = 0.5
 
-    n_trials = 10
-    #
-    # traj_data = NengoBee.get_initial_set_point([0, 0, 0, 0])
-    # u_0 = traj_data['u'][0]
-    # u_a_mean = u_0[0]
+    n_trials = 20
 
-    # iters = np.arange(n_trials)
-    # p = Pool(16)
-    # func = partial(run_model,
-    #                n_trials=n_trials,
-    #                folder=folder,
-    #                att_max=att_max,
-    #                att_rate_max=att_rate_max,
-    #                vel_max=vel_max,
-    #                angle_max=angle_max,
-    #                turn_rate_max=turn_rate_max,
-    #                bee_model=bee_model,
-    #                t_max=t_max)
-    # results = p.map(func, iters)
+    # vel_choices = np.arange(0, vel_max + 0.1, 0.1)
+    # angle_choices = np.arange(-angle_max, angle_max + 90, 90)
+    # turn_rate_choices = np.arange(0, turn_rate_max + 90, 90)
+    vel_choices = [0, 0.1, 0.2]
+    angle_choices = [0]
+    turn_rate_choices = [0]
+    vel_prob = [0.6, 0.2, 0.2]
+    angle_prob = [1.0]
+    turn_rate_prob = [1.0]
+
+    vels = np.random.choice(vel_choices, n_trials, p=vel_prob)
+    angles = np.random.choice(angle_choices, n_trials, p=angle_prob)
+    turn_rates = np.random.choice(turn_rate_choices, n_trials, p=turn_rate_prob)
 
     for i in range(n_trials):
         print('Working on Iteration {0}/{1}'.format(i+1, n_trials))
-        if FIXED_ANGLE:
-            angle = angle_max
-        else:
-            angle = np.random.uniform(-angle_max, angle_max)
+        vel = vels[i]
+        turn_rate = turn_rates[i]
+        angle = angles[i]
+
         bee_model.run(data_dir=folder,
                       pose_var=att_max,
                       dpose_var=att_rate_max,
-                      velocity=np.random.uniform(0, vel_max),
+                      velocity=vel,
                       # velocity=0,
                       angle=angle,
-                      turn_rate=np.random.uniform(0, turn_rate_max),
+                      turn_rate=turn_rate,
                       use_pif=True,
                       adapt=False,
                       wing_bias=False,
@@ -90,4 +86,5 @@ if __name__ == "__main__":
                       data_format='npz',
                       seed=np.random.randint(10000),
                       verbose=False,
-                      ctrl_filename='gather-gain_scheduled_12_11.npz')
+                      ctrl_filename='gather-gain_scheduled_12_11.npz',
+                      init_with_y_star=True)

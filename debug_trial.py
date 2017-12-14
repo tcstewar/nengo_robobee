@@ -9,36 +9,42 @@ from scipy import io
 
 bee_trial = neuron_bee.GatherDataTrial()
 
-t_max = 5.0
+t_max = 6.0
 
 USE_SNN = True
-VEL_TARGET = 0.4
+ADAPT = True
+VEL_TARGET = 0
 CLIMB_ANGLE = 0
 TURN_RATE = 0
+
+SAVE_FILE_NAME = 'saved_data/snn_debug_trial.mat'
+# SAVE_FILE_NAME = 'saved_data/{0}_debug_trial.mat'.format(('snn' if USE_SNN else 'pif'))
+# SAVE_FILE_NAME = 'saved_data/{0}_longitudinal_wind_02.mat'.format(('snn' if USE_SNN else 'pif'))
+# SAVE_FILE_NAME = 'saved_data/{0}_turn_{1}_vel_04_wind_02.mat'.format(('snn' if USE_SNN else 'pif'), TURN_RATE)
 
 print('Running: t_max={0:3.2f}, use_snn={1}, v={2:3.2f}, gamma={3:3.2f}, xi={4:3.2f}'.format(t_max, USE_SNN, VEL_TARGET, CLIMB_ANGLE, TURN_RATE))
 
 data = bee_trial.run(use_pif=(not USE_SNN),
-                     adapt=USE_SNN,
-                     ctrl_filename='gather-gain_scheduled_12_11.npz',
+                     adapt=ADAPT,
+                     ctrl_filename='gather-gain_scheduled_12_14.npz',
                      velocity=VEL_TARGET,
                      angle=CLIMB_ANGLE,
                      turn_rate=TURN_RATE,
-                     pose_var=0.4,
-                     dpose_var=10,
-                     # pose_var=0,
-                     # dpose_var=0,
+                     # pose_var=0.4,
+                     # dpose_var=10,
+                     pose_var=0,
+                     dpose_var=0,
                      use_learning_display=False,
                      T=t_max,
                      n_neurons=500,
                      n_adapt_neurons=100,
                      seed=10,
                      wing_bias=False,
-                     v_wind=0,
+                     v_wind=0.5,
                      phi_0=0,
                      actuator_failure=False,
-                     adapt_Kp=1.0,
-                     adapt_Kd=30,
+                     adapt_Kp=0.6,
+                     adapt_Kd=0.3, # adapt_Kd=0.6
                      fancy_flight=True)
 
 bee = nengo_bee.NengoBee().bee
@@ -60,9 +66,7 @@ x_body = bee.world_state_to_body(x_world)
 
 t_log = np.linspace(0, t_max, len(u))
 
-# io.savemat('saved_data/{0}_turn_{1}_vel_04_wind_02.mat'.format(('snn' if USE_SNN else 'pif'), TURN_RATE),
-# io.savemat('saved_data/{0}_longitudinal_wind_02.mat'.format(('snn' if USE_SNN else 'pif')),
-io.savemat('saved_data/{0}_debug_trial.mat'.format(('snn' if USE_SNN else 'pif')),
+io.savemat(SAVE_FILE_NAME,
            {'x_filt': x_world,
             'u_log': u,
             't': t_log,
@@ -90,6 +94,7 @@ plt.legend(['$x$', '$y$', '$z$'])
 
 plt.figure()
 plt.plot(t_log, x_body[:, bee.idx_body_att_rate])
+plt.plot(t_log, x_star_log[:, bee.idx_body_att_rate], 'k--')
 plt.ylabel('Angular Rate (rad/s)')
 plt.xlabel('t (s)')
 plt.title('Angular Rate')
@@ -97,6 +102,7 @@ plt.legend(['$d\phi/dt$', '$d\\theta/dt$', '$d\psi/dt$'])
 
 plt.figure()
 plt.plot(t_log, x_body[:, bee.idx_body_vel])
+plt.plot(t_log, x_star_log[:, bee.idx_body_vel], 'k--')
 plt.ylabel('Velocity (m/s)')
 plt.xlabel('t (s)')
 plt.title('Velocity')

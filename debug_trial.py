@@ -9,43 +9,45 @@ from scipy import io
 
 bee_trial = neuron_bee.GatherDataTrial()
 
-t_max = 6.0
+t_max = 2.0
 
 USE_SNN = True
-ADAPT = True
-VEL_TARGET = 0
-CLIMB_ANGLE = 0
+ADAPT = False
+VEL_TARGET = 0.2
+CLIMB_ANGLE = 90
 TURN_RATE = 0
 
-SAVE_FILE_NAME = 'saved_data/snn_debug_trial.mat'
-# SAVE_FILE_NAME = 'saved_data/{0}_debug_trial.mat'.format(('snn' if USE_SNN else 'pif'))
-# SAVE_FILE_NAME = 'saved_data/{0}_longitudinal_wind_02.mat'.format(('snn' if USE_SNN else 'pif'))
+SAVE_FILE_NAME = 'saved_data/{0}_debug_trial.mat'.format(('snn' if USE_SNN else 'pif'))
+# SAVE_FILE_NAME = 'saved_data/{0}_longitudinal_wind_05.mat'.format(('snn' if USE_SNN else 'pif'))
 # SAVE_FILE_NAME = 'saved_data/{0}_turn_{1}_vel_04_wind_02.mat'.format(('snn' if USE_SNN else 'pif'), TURN_RATE)
 
 print('Running: t_max={0:3.2f}, use_snn={1}, v={2:3.2f}, gamma={3:3.2f}, xi={4:3.2f}'.format(t_max, USE_SNN, VEL_TARGET, CLIMB_ANGLE, TURN_RATE))
 
 data = bee_trial.run(use_pif=(not USE_SNN),
                      adapt=ADAPT,
-                     ctrl_filename='gather-gain_scheduled_12_14.npz',
+                     ctrl_filename='gather-gain_scheduled_12_29.npz',
                      velocity=VEL_TARGET,
                      angle=CLIMB_ANGLE,
                      turn_rate=TURN_RATE,
-                     # pose_var=0.4,
-                     # dpose_var=10,
-                     pose_var=0,
-                     dpose_var=0,
+                     pose_var=0.4,
+                     # dpose_var=6,
+                     # vel_var=0.8,
+                     # pose_var=0,
+                     # dpose_var=0,
                      use_learning_display=False,
                      T=t_max,
                      n_neurons=500,
                      n_adapt_neurons=100,
                      seed=10,
                      wing_bias=False,
-                     v_wind=0.5,
+                     v_wind=0,
                      phi_0=0,
                      actuator_failure=False,
-                     adapt_Kp=0.6,
-                     adapt_Kd=0.3, # adapt_Kd=0.6
-                     fancy_flight=True)
+                     adapt_Kp=1.0,
+                     adapt_Kd=1.0, # adapt_Kd=0.6
+                     fancy_flight=False,
+                     init_with_y_star=True,
+                     dt=1E-4)
 
 bee = nengo_bee.NengoBee().bee
 
@@ -61,6 +63,7 @@ adapt_x = data['adapt_x']
 adapt_y = data['adapt_y']
 adapt_z = data['adapt_z']
 x_star_log = data['x_star']
+y_star_log = data['y_star']
 
 x_body = bee.world_state_to_body(x_world)
 
@@ -76,7 +79,8 @@ io.savemat(SAVE_FILE_NAME,
             'adapt_y': adapt_y,
             'adapt_z': adapt_z,
             'x_log': x_unfilt,
-            'x_star_log': x_star_log[:,-12:]})
+            'x_star_log': x_star_log[:,-12:],
+            'y_star_log': y_star_log})
 sns.set()
 plt.figure()
 plt.plot(t_log, x_body[:, bee.idx_body_att])

@@ -19,6 +19,7 @@ class GatherDataTrial(pytry.NengoTrial):
         self.param('turn rate', turn_rate=0.0)
         self.param('initial pose variability', pose_var=0.0)
         self.param('initial rotation rate variability', dpose_var=0.0)
+        self.param('initial velocity variability', vel_var=0.0)
         self.param('controller filename', ctrl_filename='gather-gain_scheduled_12_11.npz')
         self.param('time', T=1.0)
         self.param('number of neurons', n_neurons=500)
@@ -53,8 +54,9 @@ class GatherDataTrial(pytry.NengoTrial):
         with model:
             pose_offset = np.random.uniform(-p.pose_var, p.pose_var, size=3)
             dpose_offset = np.random.uniform(-p.dpose_var, p.dpose_var, size=3)
+            vel_offset = np.random.uniform(-p.vel_var, p.vel_var, size=3)
 
-            y_star_init = np.array([0, 0, 0, 0])
+            y_star_init = np.zeros(4)
             if p.init_with_y_star:
                 y_star_init[0] = p.velocity
                 y_star_init[1] = p.turn_rate
@@ -169,29 +171,42 @@ class GatherDataTrial(pytry.NengoTrial):
                 nengo.Connection(control.target_body_vel, vel_error, transform=-1)
                 nengo.Connection(source_body_vel, vel_error)
 
+                # Gains for 12-14 (longitudinal flight)
+                # adapt_Kp=0.6, adapt_Kd=0.3,
+                # kp: -60, 4, -40
+                # kd: -1600, 0.2, -8000
+
+                kp_x = -40
+                kp_y =2
+                kp_z = -100
+
+                kd_x = -140
+                kd_y = 20
+                kd_z = -200
+
                 if p.adapt_Kp > 0:
-                    nengo.Connection(vel_error[0], vel_learnx.learning_rule, transform=-60*p.adapt_Kp, synapse=None)
+                    nengo.Connection(vel_error[0], vel_learnx.learning_rule, transform=kp_x*p.adapt_Kp, synapse=None)
                 if p.adapt_Kd > 0:
-                    nengo.Connection(vel_error[0], vel_learnx.learning_rule, transform=-1600*p.adapt_Kd, synapse=None)
-                    nengo.Connection(vel_error[0], vel_learnx.learning_rule, transform=1600*p.adapt_Kd, synapse=0.005)
+                    nengo.Connection(vel_error[0], vel_learnx.learning_rule, transform=kd_x*p.adapt_Kd, synapse=None)
+                    nengo.Connection(vel_error[0], vel_learnx.learning_rule, transform=-kd_x*p.adapt_Kd, synapse=0.005)
                 if p.adapt_Ki > 0:
-                    nengo.Connection(bee.xyz[0], vel_learnx.learning_rule, transform=1*p.adapt_Ki, synapse=None)
+                    nengo.Connection(bee.xyz[0], vel_learnx.learning_rule, transform=0*p.adapt_Ki, synapse=None)
                 #currently using same K's for all dims
                 if p.adapt_Kp > 0:
-                    nengo.Connection(vel_error[2], vel_learnz.learning_rule, transform=-40*p.adapt_Kp, synapse=None)
+                    nengo.Connection(vel_error[1], vel_learny.learning_rule, transform=kp_y*p.adapt_Kp, synapse=None)
                 if p.adapt_Kd > 0:
-                    nengo.Connection(vel_error[2], vel_learnz.learning_rule, transform=-8000*p.adapt_Kd, synapse=None)
-                    nengo.Connection(vel_error[2], vel_learnz.learning_rule, transform=8000*p.adapt_Kd, synapse=0.005)
+                    nengo.Connection(vel_error[1], vel_learny.learning_rule, transform=kd_y*p.adapt_Kd, synapse=None)
+                    nengo.Connection(vel_error[1], vel_learny.learning_rule, transform=-kd_y*p.adapt_Kd, synapse=0.005)
+                if p.adapt_Ki > 0:
+                    nengo.Connection(bee.xyz[1], vel_learny.learning_rule, transform=0*p.adapt_Ki, synapse=None)
+
+                if p.adapt_Kp > 0:
+                    nengo.Connection(vel_error[2], vel_learnz.learning_rule, transform=kp_z*p.adapt_Kp, synapse=None)
+                if p.adapt_Kd > 0:
+                    nengo.Connection(vel_error[2], vel_learnz.learning_rule, transform=kd_z*p.adapt_Kd, synapse=None)
+                    nengo.Connection(vel_error[2], vel_learnz.learning_rule, transform=-kd_z*p.adapt_Kd, synapse=0.005)
                 if p.adapt_Ki > 0:
                     nengo.Connection(bee.xyz[2], vel_learnz.learning_rule, transform=1*p.adapt_Ki, synapse=None)
-                #currently using same K's for all dims
-                if p.adapt_Kp > 0:
-                    nengo.Connection(vel_error[1], vel_learny.learning_rule, transform=4*p.adapt_Kp, synapse=None)
-                if p.adapt_Kd > 0:
-                    nengo.Connection(vel_error[1], vel_learny.learning_rule, transform=0.2*p.adapt_Kd, synapse=None)
-                    nengo.Connection(vel_error[1], vel_learny.learning_rule, transform=-0.2*p.adapt_Kd, synapse=0.005)
-                if p.adapt_Ki > 0:
-                    nengo.Connection(bee.xyz[1], vel_learny.learning_rule, transform=0*0.1*p.adapt_Ki, synapse=None)
 
                 #inhibit_adapt = nengo.Node(0)
                 #nengo.Connection(inhibit_adapt, adapt_vel.neurons, transform=-10*np.ones((adapt_vel.n_neurons, 1)))
@@ -406,19 +421,25 @@ class GatherDataTrial(pytry.NengoTrial):
             plt.ylabel('u error')
             plt.legend(['stroke ampl.', 'pitch torque', 'yaw torque', 'roll'], loc='best')
 
+        l = len(sim.data[self.probe_x])
+        if sim.dt <= 1E-4:
+            idx = np.arange(0, l, 20)
+        else:
+            idx = np.arange(0, l, 2)
+
         return dict(
             solver_error = sim.data[self.conn].solver_info['rmses'],
-            x=sim.data[self.probe_x],
-            u=sim.data[self.probe_u],
-            y_star=sim.data[self.probe_y_star],
-            pif_u=sim.data[self.probe_pif_u],
+            x=sim.data[self.probe_x][idx, :],
+            u=sim.data[self.probe_u][idx, :],
+            y_star=sim.data[self.probe_y_star][idx, :],
+            pif_u=sim.data[self.probe_pif_u][idx, :],
             # pif_u_dot=sim.data[self.probe_pif_u_dot],
-            ens=sim.data[self.probe_ens],
-            adapt_x=sim.data[self.probe_adaptx_u],
-            adapt_y=sim.data[self.probe_adapty_u],
-            adapt_z=sim.data[self.probe_adaptz_u],
-            x_unfilt=sim.data[self.probe_x_unfilt],
-            x_star=sim.data[self.probe_x_star])
+            ens=sim.data[self.probe_ens][idx, :],
+            adapt_x=sim.data[self.probe_adaptx_u][idx, :],
+            adapt_y=sim.data[self.probe_adapty_u][idx, :],
+            adapt_z=sim.data[self.probe_adaptz_u][idx, :],
+            x_unfilt=sim.data[self.probe_x_unfilt][idx, :],
+            x_star=sim.data[self.probe_x_star][idx, :])
             # learny=sim.data[self.probe_learny_u])
 
         

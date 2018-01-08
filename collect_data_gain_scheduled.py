@@ -35,29 +35,25 @@ def run_model(i, n_trials, folder, att_max, att_rate_max, vel_max, angle_max, tu
 if __name__ == "__main__":
     bee_model = neuron_bee.GatherDataTrial()
 
-    folder = 'gather_gain_scheduled_12_14'
+    folder = 'gather_gain_scheduled_12_29'
 
     if not os.path.exists(folder):
         os.makedirs(folder)
 
-    FIXED_SETPOINT=True
-
-    att_max = 0.8
-    att_rate_max = 8
-    # vel_max = 0.3
-    # angle_max = 90
-    # turn_rate_max = 0
+    att_max = 0.4
+    att_rate_max = 6
+    vel_var = 0.5
     t_max = 0.5
 
-    n_trials = 20
+    n_trials = 10
 
     # vel_choices = np.arange(0, vel_max + 0.1, 0.1)
     # angle_choices = np.arange(-angle_max, angle_max + 90, 90)
     # turn_rate_choices = np.arange(0, turn_rate_max + 90, 90)
-    vel_choices = [0, 0.1, 0.2]
+    vel_choices = [0]
     angle_choices = [0]
     turn_rate_choices = [0]
-    vel_prob = [0.6, 0.2, 0.2]
+    vel_prob = [1.0]
     angle_prob = [1.0]
     turn_rate_prob = [1.0]
 
@@ -86,5 +82,6 @@ if __name__ == "__main__":
                       data_format='npz',
                       seed=np.random.randint(10000),
                       verbose=False,
-                      ctrl_filename='gather-gain_scheduled_12_11.npz',
-                      init_with_y_star=True)
+                      ctrl_filename='gather-gain_scheduled_12_21_good_hover.npz',
+                      init_with_y_star=True,
+                      dt=1e-4)

@@ -11,7 +11,7 @@ class PIFControl(nengo.Network):
     def __init__(self, bee, label=None):
         self.bee = bee
         super(PIFControl, self).__init__(label=label)
-        self.controller = PIFCompensator()
+        self.controller = PIFCompensator(gains_file='PIF_Gains_Body_New_Yaw.mat')
 
         def control_ode_fun(t, eta, y_star, x, u, bee):
             return self.controller.get_control_dynamics(eta, t, y_star, x, u, bee)
@@ -33,6 +33,8 @@ class PIFControl(nengo.Network):
             # self.target_body_vel = nengo.Node(get_target_vel, size_in=4)
             def get_x_star(t, v): return self.controller.get_x_star(v)
             self.x_star = nengo.Node(get_x_star, size_in=4)
+            def get_u_star(t, v): return self.controller.get_u_star(v)
+            self.u_star = nengo.Node(get_u_star, size_in=4)
             def rotate_vel(t, v): return self.bee.world_state_to_body(v)[-3:]
             self.target_body_vel = nengo.Node(rotate_vel, size_in=20)
 
@@ -41,11 +43,15 @@ class PIFControl(nengo.Network):
             nengo.Connection(self.u, self.control[24:], synapse=None)
             # nengo.Connection(self.y_star, self.target_body_vel, synapse=None)
             nengo.Connection(self.y_star, self.x_star, synapse=None)
+            nengo.Connection(self.y_star, self.u_star, synapse=None)
             nengo.Connection(self.x_star, self.target_body_vel)
             # nengo.Connection(self.u_dot_node, self.u_dot, synapse=None)
 
     def update(self, t, v):
         y_star, x, u = v[:4], v[4:24], v[24:28]
+        if t == 0:
+            x = self.controller.get_x_star(y_star)
+            u = self.controller.get_u_star(y_star)
         self.integrator_control.set_f_params(y_star, x, u, self.bee)
         eta = self.integrator_control.integrate(t)
         self.u_dot = self.controller.get_control_dynamics(eta, t, y_star, x, u, self.bee)[:4]

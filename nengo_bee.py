@@ -24,14 +24,17 @@ class NengoBee(nengo.Network):
         self.v_wind=v_wind
         self.sample_dt = sample_dt
 
-        self.data_buffer = []
+        # self.data_buffer = []
 
-        self.bee = robobee.RoboBee(random_wing_bias=random_wing_bias, actuator_failure=actuator_failure, a_theta=-0.2, b_theta=0.04, new_yaw_control=True)
+        self.bee = robobee.RoboBee(random_wing_bias=random_wing_bias,
+                                   actuator_failure=actuator_failure,
+                                   a_theta=-0.2, b_theta=0.04,
+                                   new_yaw_control=True)
         self.pif_controller = PIFControl(self.bee)
 
-        if random_wing_bias == True:
-            self.bee.ROLL_BIAS = 1.0
-            self.bee.PITCH_BIAS = 10.0
+        # if random_wing_bias == True:
+        #     self.bee.ROLL_BIAS = 1.0
+        #     self.bee.PITCH_BIAS = 10.0
 
         x, self.u_0 = self.get_initial_set_point(y_star_init)
 
@@ -42,6 +45,7 @@ class NengoBee(nengo.Network):
 
         self.integrator_dynamics = scipy.integrate.ode(self.bee.get_dynamics).set_integrator('dopri5')
         self.integrator_dynamics.set_initial_value(x, 0)
+        self.integrator_dynamics.set_f_params(self.u_0, np.array([0, 0, 0]))
 
         with self:
             self.plant_unfilt = nengo.Node(self.update, size_in=len(self.u_0))
@@ -77,12 +81,14 @@ class NengoBee(nengo.Network):
             self.sampled_t = [0, 0]
 
             def sample_body_state(t, x):
+                # return x
                 if self.sampled_t[0] <= t:
                     self.sampled_body_state = x
                     self.sampled_t[0] += max(self.sample_dt, t - self.sampled_t[0])
                 return self.sampled_body_state
 
             def sample_body_vel(t, x):
+                # return x
                 if self.sampled_t[1] <= t:
                     self.sampled_body_vel = x
                     self.sampled_t[1] += max(self.sample_dt, t - self.sampled_t[1])
@@ -106,19 +112,22 @@ class NengoBee(nengo.Network):
             nengo.Connection(self.xyz_rate_body, self.body_vel_sampled, synapse=None)
 
     def update(self, t, u):
-        self.integrator_dynamics.set_f_params(u, np.array([self.v_wind, 0, 0]))
-        x = self.integrator_dynamics.integrate(t)
-
-        self.data_buffer.append({'data': x, 't': t})
+        if t > 0:
+            self.integrator_dynamics.set_f_params(u, np.array([self.v_wind, 0, 0]))
+            x = self.integrator_dynamics.integrate(t)
+        else:
+            x = np.zeros(20)
+        # self.data_buffer.append({'data': x, 't': t})
         # self.update_delayed_state(
 
         return x
 
     def get_initial_set_point(self, y_star):
-        # folder_name = r'..\PyBee3D\PyBee3D\Saved Data\Maneuvers\Flight_Envelope\New_Yaw'
-        # file_name = 'vel{0:3.1f}_turn{1:3.1f}_climb{2:3.1f}_slip{3:3.1f}'.format(y_star[0], y_star[1], y_star[2], y_star[3])
-        # file_path = path.join(folder_name, file_name)
-        # data = scipy.io.loadmat(file_path)
-        x_star = self.pif_controller.controller.get_x_star(y_star)
-        u_star = self.pif_controller.controller.get_u_star(y_star)
+        folder_name = r'..\PyBee3D\PyBee3D\Saved Data\Maneuvers\Flight_Envelope\New_Yaw'
+        file_name = 'vel{0:3.1f}_turn{1:3.1f}_climb{2:3.1f}_slip{3:3.1f}'.format(y_star[0], y_star[1], y_star[2], y_star[3])
+        file_path = path.join(folder_name, file_name)
+        data = scipy.io.loadmat(file_path)
+        x_star = data['x_0'].flatten()
+        u_star = data['u_0'].flatten()
+        # u_star = self.pif_controller.controller.get_u_star(y_star)
         return x_star, u_star

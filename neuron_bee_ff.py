@@ -121,60 +121,46 @@ class GatherDataTrial(pytry.NengoTrial):
             keep_x_names = ['theta', 'psi', 'phi_dot', 'theta_dot', 'psi_dot', 'v_x', 'v_y', 'v_z']
             # keep_x_names = ['theta_dot', 'psi_dot', 'v_x', 'v_y', 'v_z']
             keep_x = [robobee.state_names.index(name) for name in keep_x_names]
-            keep_u = []
-            keep_y_star = [0, 2]
+            keep_y_star = [0, 1, 2]
 
             # Use the body frame velocities
             y_star_vals = ctrl['norm_y_star'][:,keep_y_star]
-            x_vals = ctrl['norm_x_body'][:,keep_x]
-            u_vals = ctrl['norm_delta_u'][:,keep_u]
+            x_vals = ctrl['norm_x_star'][:,keep_x]
+            u_star_vals = ctrl['norm_u_star']
+            ss_gains = ctrl['norm_gains']
 
-            target = ctrl['all_delta_u']
+            # target = ctrl['all_delta_u']
+            # pts = np.hstack([x_vals, u_vals, y_star_vals])
 
-            pts = np.hstack([x_vals, u_vals, y_star_vals])
-
-            D = pts.shape[1]
+            D = y_star_vals.shape[1]
             ens = nengo.Ensemble(n_neurons=p.n_neurons, dimensions=D,
                                  intercepts=nengo.dists.Uniform(p.low_intercept, 1.0),
                                  neuron_type=nengo.LIF(), radius=np.sqrt(D)*p.radius_scaling)
 
-            vel_pts = [0, 0.5, 1.0]
-            turn_rate_pts = [0]
-            angle_pts = [-90, -75, -60, -45, -30, -15, 0, 15, 30, 45, 60, 75, 90]
-            sideslip_pts = [0]
-
-            # get the feedforward control input at different points
-            y_star_pts = list(product(vel_pts, turn_rate_pts, angle_pts, sideslip_pts))
-            u_star_pts = [control.controller.get_u_star(y_star) for y_star in y_star_pts]
-
-            y_star_pts = np.array(y_star_pts)
-            u_star_pts = np.array(u_star_pts)
-
-            mean_y_star = np.mean(y_star_pts, axis=0)
-            std_y_star = np.std(y_star_pts, axis=0)
-            norm_y_star = (y_star_pts - mean_y_star) / std_y_star
-
-            y_star_vals_ff = norm_y_star[:, keep_y_star]
-
-            D = y_star_vals_ff.shape[1]
+            D = y_star_vals.shape[1]
             ens_ff = nengo.Ensemble(n_neurons=500, dimensions=D,
                                     intercepts=nengo.dists.Uniform(-1.0, 1.0),
                                     neuron_type=nengo.LIF(), radius=np.sqrt(D) * p.radius_scaling)
 
-            nengo.Connection(control.y_star[keep_y_star], ens_ff, synapse=None, transform=1.0 / std_y_star[keep_y_star])
-            nengo.Connection(nengo.Node((mean_y_star / std_y_star)[keep_y_star]), ens_ff, transform=-1, synapse=None)
+            nengo.Connection(control.y_star[keep_y_star], ens_ff, synapse=None, transform=1.0 / ctrl['std_y_star'][keep_y_star])
+            nengo.Connection(nengo.Node((ctrl['mean_y_star'] / ctrl['std_y_star'])[keep_y_star]), ens_ff, transform=-1, synapse=None)
 
             u_ff = nengo.Node(None, size_in=4)
 
-            self.conn = nengo.Connection(ens_ff, u_ff,
-                                         eval_points=y_star_vals_ff,
-                                         scale_eval_points=False,
-                                         function=u_star_pts,
-                                         synapse=0.04,
-                                         learning_rule_type=None,
-                                         solver=nengo.solvers.LstsqL2(reg=p.reg))
+            nengo.Connection(ens_ff, u_ff,
+                             eval_points=y_star_vals,
+                             scale_eval_points=False,
+                             function=ctrl['u_star_vals'],
+                             synapse=0.04,
+                             learning_rule_type=None,
+                             solver=nengo.solvers.LstsqL2(reg=p.reg))
 
-            delta_u_unfilt = nengo.Node(None, size_in=4)
+            def multiply_gain(t, v):
+                K = np.reshape(v[0:4*len(keep_x)], (4, len(keep_x)))
+                x = v[-len(keep_x):]
+                return K @ x
+
+            delta_u_unfilt = nengo.Node(multiply_gain, size_in=(4*len(keep_x) + len(keep_x)), size_out=4)
             u = nengo.Node(None, size_in=4)
 
             if p.Ki > 0:
@@ -290,33 +276,42 @@ class GatherDataTrial(pytry.NengoTrial):
                 self.probe_adapty_u = nengo.Probe(nengo.Node(None, size_in=1), synapse=None)
                 self.probe_adaptz_u = nengo.Probe(nengo.Node(None, size_in=1), synapse=None)
 
-            nengo.Connection(bee.x_body_sampled[keep_x], ens[:len(keep_x)], synapse=None, transform=1.0/ctrl['std_x_body'][keep_x])
-            if len(keep_u) > 0:
-                nengo.Connection(bee.u[keep_u], ens[len(keep_x):], synapse=None, transform=1.0/ctrl['std_u'][keep_u])
-            nengo.Connection(control.y_star[keep_y_star], ens[-len(keep_y_star):], synapse=None, transform=1.0/ctrl['std_y_star'][keep_y_star])
+            # nengo.Connection(bee.x_body_sampled[keep_x], ens[:len(keep_x)], synapse=None, transform=1.0/ctrl['std_x_body'][keep_x])
+            # if len(keep_u) > 0:
+            #     nengo.Connection(bee.u[keep_u], ens[len(keep_x):], synapse=None, transform=1.0/ctrl['std_u'][keep_u])
+            nengo.Connection(control.y_star[keep_y_star], ens[:len(keep_y_star)], synapse=None, transform=1.0/ctrl['std_y_star'][keep_y_star])
 
-            nengo.Connection(nengo.Node((ctrl['mean_x_body']/ctrl['std_x_body'])[keep_x]), ens[:len(keep_x)], transform=-1, synapse=None)
-            if len(keep_u) > 0:
-                nengo.Connection(nengo.Node((ctrl['mean_u']/ctrl['std_u'])[keep_u]), ens[len(keep_x):], transform=-1, synapse=None)
-            nengo.Connection(nengo.Node((ctrl['mean_y_star'] / ctrl['std_y_star'])[keep_y_star]), ens[-len(keep_y_star):], transform=-1, synapse=None)
+            # nengo.Connection(nengo.Node((ctrl['mean_x_body']/ctrl['std_x_body'])[keep_x]), ens[:len(keep_x)], transform=-1, synapse=None)
+            # if len(keep_u) > 0:
+            #     nengo.Connection(nengo.Node((ctrl['mean_u']/ctrl['std_u'])[keep_u]), ens[len(keep_x):], transform=-1, synapse=None)
+            nengo.Connection(nengo.Node((ctrl['mean_y_star'] / ctrl['std_y_star'])[keep_y_star]), ens[:len(keep_y_star)], transform=-1, synapse=None)
 
             if p.oracle:
                 learning_rule=nengo.PES(learning_rate=p.learning_rate)
             else:
                 learning_rule=None
-            self.conn = nengo.Connection(ens, delta_u_unfilt,
-                                         eval_points=pts,
+
+            self.conn = nengo.Connection(ens, delta_u_unfilt[:-len(keep_x)],
+                                         eval_points=y_star_vals,
                                          scale_eval_points=False,
-                                         function=target,
-                                         synapse=0.01,
+                                         function=ctrl['ss_gains'],
+                                         synapse=0.02,
                                          learning_rule_type=learning_rule,
                                          solver=nengo.solvers.LstsqL2(reg=p.reg))
+
+            x_tilde = nengo.Node(None, size_in=len(keep_x))
+            nengo.Connection(control.x_star[keep_x], x_tilde, synapse=None, transform=-1)
+            nengo.Connection(bee.x_body_sampled[keep_x], x_tilde, synapse=None)
+
+            nengo.Connection(x_tilde, delta_u_unfilt[-len(keep_x):])
+            # nengo.Connection(ens, delta_u_unfilt[:-len(keep_x)])
 
             if p.use_pif:
                 nengo.Connection(control.control, u, synapse=None)
             else:
-                nengo.Connection(delta_u_unfilt[0], u[0], synapse=None)
-                nengo.Connection(delta_u_unfilt[1:], u[1:], synapse=None)
+                nengo.Connection(delta_u_unfilt, u, synapse=None)
+                # nengo.Connection(delta_u_unfilt[0], u[0], synapse=None)
+                # nengo.Connection(delta_u_unfilt[1:], u[1:], synapse=None)
                 nengo.Connection(u_ff, u, synapse=None)
             nengo.Connection(u, bee.u, synapse=None)
 

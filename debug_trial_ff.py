@@ -9,13 +9,13 @@ from scipy import io
 
 bee_trial = GatherDataTrial()
 
-t_max = 0.5
+t_max = 2.0
 
 USE_SNN = True
 ADAPT = False
 VEL_TARGET = 0.5
-CLIMB_ANGLE = 0
-TURN_RATE = 0
+CLIMB_ANGLE = 30
+TURN_RATE = 90
 
 SAVE_FILE_NAME = 'saved_data/{0}_debug_trial.mat'.format(('snn' if USE_SNN else 'pif'))
 # SAVE_FILE_NAME = 'saved_data/{0}_longitudinal_wind_05.mat'.format(('snn' if USE_SNN else 'pif'))

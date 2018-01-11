@@ -11,95 +11,73 @@ import scipy
 sys.path.append(r'..\PyBee3D\PyBee3D')
 from controllers.pif.pif_compensator import PIFCompensator
 import robobee
+from itertools import product
 
 DATA_SET = 'ff_1_8_test'
 
-t_f = 0.5
-n_pts = 500
+vel_range = np.array([0.5, 1.0])
+xi_dot_range = np.array([0, 90, 180])
+gamma_range = np.arange(-90, 105, 15)
+beta_range = [0]
 
-y_star = np.array([[0, 0, 0, 0],
-                   [0.5, 0, 0, 0],
-                   [0.5, 0, 90, 0],
-                   [0.5, 0, -90, 0],
-                   [0.5, 0, 45, 0],
-                   [0.5, 0, -45, 0]])
+y_star_vals = list(product(vel_range, xi_dot_range, gamma_range, beta_range))
+y_star_vals.insert(0, (0, 0, 0, 0))
 
-n_y_star = len(y_star)
+n_y_star = len(y_star_vals)
 
-wing_range = np.zeros(8)
-angle_range = np.ones(3)*0.8
-pos_range = np.zeros(3)
-angle_rate_range = np.array([4, 4, 15])
-vel_range = np.ones(3)*1.0
-
-x_range = np.hstack((wing_range, angle_range, pos_range, angle_rate_range, vel_range))
-
-y_star_vals = np.repeat(y_star, n_pts, axis=0)
-x_vals = np.random.uniform(-x_range, x_range, (n_pts*n_y_star, len(x_range)))
-u_vals = np.zeros((n_pts*n_y_star, 4))
-u_ff_vals = np.zeros(np.shape(u_vals))
+u_star_vals = np.zeros((n_y_star, 4))
+x_star_vals = np.zeros((n_y_star, 20))
+ss_gains = np.zeros((n_y_star, 4*8))
 
 pif = PIFCompensator(gains_file='PIF_Gains_Body_New_Yaw.mat')
 bee = robobee.RoboBee(random_wing_bias=False,
                       a_theta=-0.2, b_theta=0.04,
                       new_yaw_control=True)
 
-def control_ode_fun(t, eta, y_star, x, u, bee):
-    eta[4:] = np.zeros(3)
-    eta = pif.get_control_dynamics(eta, t, y_star, x, eta[:4], bee)
-    return eta
+y_star_vals = np.array(y_star_vals)
 
-integrator_control = scipy.integrate.ode(control_ode_fun).set_integrator('dopri5')
-eta_0 = np.zeros(7)
-eta_0[:4] = pif.get_u_star(np.array([0, 0, 0, 0]))
+for i in range(n_y_star):
+    K = pif.get_gains(y_star_vals[i, :])
+    K_scaled = np.diag(pif.scale_u_dot) @ K @ np.diag(pif.scale_chi)
+    K_1 = K_scaled[:,0:8]
+    K_2 = K_scaled[:,8:12]
+    K_ss = -np.linalg.inv(K_2) @ K_1
 
+    ss_gains[i,:] = K_ss.flatten()
+    u_star_vals[i, :] = pif.get_u_star(y_star_vals[i, :])
+    x_star_vals[i,:] = pif.get_x_star(y_star_vals[i, :])
 
-for i in range(n_pts*n_y_star):
-    print('{0}/{1}\r'.format(i, n_pts*n_y_star), end='')
-    x = x_vals[i,:]
-    integrator_control.set_initial_value(eta_0, 0)
-    u = np.zeros(4)
-    integrator_control.set_f_params(y_star_vals[i,:], x, u, bee)
-    eta = integrator_control.integrate(t_f)
-    u = eta[:4]
-    u_vals[i,:] = u
-    u_ff_vals[i,:] = pif.get_u_star(y_star_vals[i,:])
-
-x_vals_body = bee.world_state_to_body(x_vals)
-
-delta_u_vals = u_vals - u_ff_vals
-
-mean_x = np.mean(x_vals, axis=0)
-mean_x_body = np.mean(x_vals_body, axis=0)
-mean_delta_u = np.mean(delta_u_vals, axis=0)
+mean_gains = np.mean(ss_gains, axis=0)
+mean_u_star = np.mean(u_star_vals, axis=0)
+mean_x_star = np.mean(x_star_vals, axis=0)
 mean_y_star = np.mean(y_star_vals, axis=0)
 
-std_x = np.std(x_vals, axis=0)
-std_x_body = np.std(x_vals_body, axis=0)
-std_delta_u = np.std(delta_u_vals, axis=0)
+std_gains = np.std(ss_gains, axis=0)
+std_u_star = np.std(u_star_vals, axis=0)
+std_x_star = np.std(x_star_vals, axis=0)
 std_y_star = np.std(y_star_vals, axis=0)
 
-norm_x = (x_vals - mean_x) / std_x
-norm_x_body = (x_vals_body - mean_x_body) / std_x_body
-norm_delta_u = (delta_u_vals - mean_delta_u) / std_delta_u
+norm_gains = (ss_gains - mean_gains) / std_gains
+norm_u_star = (u_star_vals - mean_u_star) / std_u_star
+norm_x_star = (x_star_vals - mean_x_star) / std_x_star
 norm_y_star = (y_star_vals - mean_y_star) / std_y_star
 
 np.savez('gather-{0}'.format(DATA_SET),
-         mean_x=mean_x,
-         mean_x_body=mean_x_body,
-         mean_delta_u=mean_delta_u,
+         mean_gains=mean_gains,
+         mean_u_star=mean_u_star,
+         mean_x_star=mean_x_star,
          mean_y_star=mean_y_star,
-         std_x=std_x,
-         std_x_body=std_x_body,
-         std_delta_u=std_delta_u,
+         std_gains=std_gains,
+         std_u_star=std_u_star,
+         std_x_star=std_x_star,
          std_y_star=std_y_star,
-         all_delta_u=delta_u_vals,
-         all_x=x_vals,
-         all_x_body=x_vals_body,
+         ss_gains=ss_gains,
+         u_star_vals=u_star_vals,
+         x_star_vals=x_star_vals,
          all_y_star=y_star_vals,
-         norm_x=norm_x,
-         norm_x_body=norm_x_body,
-         norm_delta_u=norm_delta_u,
+         norm_gains=norm_gains,
+         norm_u_star=norm_u_star,
+         norm_x_star=norm_x_star,
          norm_y_star=norm_y_star)
 #
 #
